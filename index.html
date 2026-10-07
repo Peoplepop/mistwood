@@ -114,13 +114,13 @@ body.touch .keyOnly{display:none}
   <p class="sub">原創 2D 橫向捲軸動作 RPG・第一階段原型</p>
   <table class="keys keyOnly">
     <tr><td>← →</td><td>移動</td></tr>
-    <tr><td>↑ ↓</td><td>攀爬繩索</td></tr>
+    <tr><td>↑ ↓</td><td>攀爬繩索（附近沒有繩索時，按 ↓ 趴下）</td></tr>
     <tr><td>Alt / 空白鍵</td><td>跳躍（按住 ↓ + 跳躍：從平台跳下）</td></tr>
     <tr><td>Ctrl / Z</td><td>普通攻擊</td></tr>
     <tr><td>X</td><td>技能「風刃斬」（消耗 8 MP）</td></tr>
     <tr><td>1 / 2</td><td>使用紅色藥水 / 藍色藥水</td></tr>
   </table>
-  <div class="touchOnly note">使用畫面下方按鈕操作：方向鍵移動與攀爬，按住 ▼ 再按「跳躍」可從平台跳下。</div>
+  <div class="touchOnly note">使用畫面下方按鈕操作：方向鍵移動與攀爬，沒有繩索時按 ▼ 趴下，按住 ▼ 再按「跳躍」可從平台跳下。</div>
   <p class="note">怪物掉落的金幣與藥水，<b>碰觸即自動拾取</b>。</p>
   <button class="btn" id="startBtn">開始冒險</button>
   <p class="tip keyOnly">按任意鍵或點擊開始</p>
@@ -142,7 +142,7 @@ const PLAYER_NAME = '阿嵐';
 const PLAYER_BASE = { hp: 50, mp: 30, atk: 12, def: 0 };
 const PLAYER_GROWTH = { hp: 14, mp: 7, atk: 3, def: 0.6 };
 const PHYS = { walk: 200, accel: 1900, airAccel: 900, jump: 760, climb: 140, maxFall: 1100 };
-const ATTACK = { dur: 0.34, cd: 0.42, hitFrom: 0.07, hitTo: 0.2, range: 74, crit: 0.15, critMul: 1.75 };
+const ATTACK = { dur: 0.34, cd: 0.42, hitFrom: 0.07, hitTo: 0.2, range: 74, stabRange: 66, crit: 0.15, critMul: 1.75 };
 const SKILL = { name: '風刃斬', mp: 8, cd: 1.2, mult: 1.6, speed: 720, range: 520, pierce: 3 };
 const POTION = { hp: { heal: 60, name: '紅色藥水' }, mp: { heal: 40, name: '藍色藥水' }, cd: 0.5 };
 // 升到下一級所需經驗（索引 = 目前等級）
@@ -274,7 +274,7 @@ function makePlayer(d) {
     lv: clamp(Math.floor(num(d.lv, 1)), 1, 200), exp: Math.max(0, num(d.exp, 0)), coins: Math.max(0, Math.floor(num(d.coins, 0))),
     pots: { hp: Math.max(0, Math.floor(num(d.pots && d.pots.hp, 5))), mp: Math.max(0, Math.floor(num(d.pots && d.pots.mp, 3))) },
     inv: 0, hurtT: 0, atkT: 0, atkCD: 0, atkKind: 'melee', swing: 0, skillCD: 0, potCD: 0, dropT: 0, dropPlat: null,
-    anim: 0, dead: false, deadT: 0, expLoss: 0,
+    anim: 0, dead: false, deadT: 0, expLoss: 0, prone: false,
   };
   recalcStats(p);
   p.hp = clamp(Math.round(num(d.hp, p.maxHp)), 0, p.maxHp);
@@ -417,7 +417,7 @@ function respawn() {
   const p = G.player;
   if (!p.dead) return;
   p.exp = Math.max(0, p.exp - p.expLoss); p.expLoss = 0;
-  Object.assign(p, { dead: false, deadT: 0, hp: Math.ceil(p.maxHp * 0.5), mp: Math.max(p.mp, Math.ceil(p.maxMp * 0.5)), x: TOWN_X, y: GROUND_Y, vx: 0, vy: 0, inv: 2, rope: null, onGround: false, face: 1, atkT: 0, hurtT: 0 });
+  Object.assign(p, { dead: false, deadT: 0, hp: Math.ceil(p.maxHp * 0.5), mp: Math.max(p.mp, Math.ceil(p.maxMp * 0.5)), x: TOWN_X, y: GROUND_Y, vx: 0, vy: 0, inv: 2, rope: null, onGround: false, face: 1, atkT: 0, hurtT: 0, prone: false });
   G.deathShown = false; $('death').classList.remove('show');
   G.cam.x = clamp(p.x - VIEW_W / 2, 0, WORLD_W - VIEW_W);
   G.cam.y = clamp(p.y - VIEW_H * 0.62, 0, WORLD_H - VIEW_H);
@@ -483,33 +483,36 @@ function updatePlayer(dt) {
   }
 
   const control = p.hurtT <= 0;
+  const wantProne = control && p.onGround && held.down;
   if (control && pressed.attack && p.atkCD <= 0) {
-    p.atkT = ATTACK.dur; p.atkDur = ATTACK.dur; p.atkCD = ATTACK.cd; p.atkKind = 'melee'; p.swing++; SFX.swing();
+    p.atkT = ATTACK.dur; p.atkDur = ATTACK.dur; p.atkCD = ATTACK.cd; p.atkKind = wantProne ? 'stab' : 'melee'; p.swing++; SFX.swing();
   } else if (control && pressed.skill && p.atkT <= 0) castSkill();
+  p.prone = wantProne && (p.atkT <= 0 || p.atkKind === 'stab');
 
   if (p.atkT > 0) {
     p.atkT = Math.max(0, p.atkT - dt);
-    if (p.atkKind === 'melee') {
-      const e = p.atkDur - p.atkT;
+    if (p.atkKind !== 'skill') {
+      const e = p.atkDur - p.atkT, stab = p.atkKind === 'stab';
       if (e >= ATTACK.hitFrom && e <= ATTACK.hitTo) {
-        const x1 = p.face > 0 ? p.x - 8 : p.x - ATTACK.range, x2 = p.face > 0 ? p.x + ATTACK.range : p.x + 8;
+        const range = stab ? ATTACK.stabRange : ATTACK.range, top = stab ? p.y - 30 : p.y - 60;
+        const x1 = p.face > 0 ? p.x - 8 : p.x - range, x2 = p.face > 0 ? p.x + range : p.x + 8;
         for (const m of G.monsters) {
           if (m.dead || m.spawnFx > 0 || m.lastSwing === p.swing) continue;
-          if (overlap(x1, p.y - 60, x2, p.y + 6, m.x - m.d.w / 2, m.y - m.d.h, m.x + m.d.w / 2, m.y)) { m.lastSwing = p.swing; hitMonster(m, 1, p.face); }
+          if (overlap(x1, top, x2, p.y + 6, m.x - m.d.w / 2, m.y - m.d.h, m.x + m.d.w / 2, m.y)) { m.lastSwing = p.swing; hitMonster(m, 1, p.face); }
         }
       }
     }
   }
 
   let target = control ? dir * PHYS.walk : p.vx;
-  if (p.atkT > 0 && p.onGround) target = 0;
+  if ((p.atkT > 0 || p.prone) && p.onGround) target = 0;
   if (control && dir !== 0 && p.atkT <= 0) p.face = dir;
   if (control) p.vx = approach(p.vx, target, (p.onGround ? PHYS.accel : PHYS.airAccel) * dt);
   else p.vx = approach(p.vx, 0, 300 * dt);
 
   if (pressed.jump && p.onGround && control && p.atkT <= 0) {
-    if (held.down && p.plat && !p.plat.ground) {
-      p.dropPlat = p.plat; p.dropT = 0.3; p.onGround = false; p.plat = null; p.vy = 40; p.y += 2;
+    if (held.down) {
+      if (p.plat && !p.plat.ground) { p.dropPlat = p.plat; p.dropT = 0.3; p.onGround = false; p.plat = null; p.vy = 40; p.y += 2; p.prone = false; }
     } else { p.vy = -PHYS.jump; p.onGround = false; p.plat = null; SFX.jump(); }
   }
 
@@ -576,8 +579,8 @@ function updateMonster(m, dt) {
   }
   if (m.y > GROUND_Y) { m.y = GROUND_Y; m.onGround = true; }
   if (!p.dead && p.inv <= 0 && m.spawnFx <= 0) {
-    const pw = p.w / 2 - 2, mw = d.w / 2 - 4;
-    if (overlap(p.x - pw, p.y - p.h + 6, p.x + pw, p.y, m.x - mw, m.y - d.h + 6, m.x + mw, m.y)) hurtPlayer(m);
+    const pw = p.w / 2 - 2, mw = d.w / 2 - 4, ph = p.prone ? 22 : p.h;
+    if (overlap(p.x - pw, p.y - ph + 6, p.x + pw, p.y, m.x - mw, m.y - d.h + 6, m.x + mw, m.y)) hurtPlayer(m);
   }
 }
 
@@ -818,6 +821,7 @@ function drawBackground() {
 function heroState(p) {
   if (p.dead) return 'dead';
   if (p.rope) return 'climb';
+  if (p.prone) return 'prone';
   if (p.atkT > 0) return 'attack';
   if (!p.onGround) return 'jump';
   if (Math.abs(p.vx) > 20) return 'walk';
@@ -839,6 +843,7 @@ function drawSword(ang) {
 function drawHero(p) {
   const st = heroState(p), t = G.time, ph = p.anim;
   if (st === 'climb') return drawHeroClimb(p);
+  if (st === 'prone') return drawHeroProne(p);
   let bob = 0, la = 0, lb = 0, liftA = 0, liftB = 0;
   if (st === 'walk') { const s = Math.sin(ph * 13); la = s * 4; lb = -s * 4; liftA = Math.max(0, Math.cos(ph * 13)) * 2; liftB = Math.max(0, -Math.cos(ph * 13)) * 2; bob = Math.abs(Math.sin(ph * 13)) * 1.5; }
   else if (st === 'idle') bob = Math.sin(t * 3) * 0.8;
@@ -887,6 +892,39 @@ function drawHero(p) {
   else ang = 0.95 + Math.sin(t * 3) * 0.04;
   drawSword(ang);
   ctx.restore();
+}
+function drawHeroProne(p) {
+  const stab = p.atkT > 0 && p.atkKind === 'stab';
+  const e = stab ? 1 - p.atkT / p.atkDur : 0;
+  const thrust = stab ? Math.sin(Math.min(1, e / 0.6) * Math.PI) * 16 : 0;
+  const br = Math.sin(G.time * 2.5) * 0.6, wave = Math.sin(G.time * 9 + p.x * 0.05) * 2;
+  shape('#3d4f7a', () => rr(-24, -8, 14, 6, 2.5), 1.5);
+  shape('#5b3a24', () => rr(-28, -9, 6, 8, 2), 1.5);
+  shape('#3f8f6b', () => rr(-12, -15 - br, 18, 14 + br, 5));
+  ctx.fillStyle = '#6b4423'; ctx.fillRect(-5, -14 - br, 3, 12 + br);
+  ctx.save(); ctx.translate(16 + thrust, -4);
+  shape('#e9f0f7', () => { ctx.moveTo(4, -2.4); ctx.lineTo(26, -2.4); ctx.lineTo(31, 0); ctx.lineTo(26, 2.4); ctx.lineTo(4, 2.4); ctx.closePath(); }, 1.5, '#4c5a6e');
+  shape('#f3c45a', () => rr(1, -5.5, 3.5, 11, 1.5), 1.5);
+  shape('#6b4423', () => rr(-5, -2, 7, 4, 1.5), 1.5);
+  shape('#ffdcb9', () => ell(-3, 0, 3.4, 3.4), 1.5);
+  ctx.restore();
+  if (stab && e > 0.1 && e < 0.7) {
+    const k = 1 - (e - 0.1) / 0.6;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgba(160,230,255,${0.45 * k})`; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(34, -4); ctx.lineTo(70 - k * 16, -4); ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,255,${0.9 * k})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(38, -4); ctx.lineTo(72 - k * 14, -4); ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+  shape('#ffdcb9', () => ell(14, -13, 11.5, 11));
+  shape('#6b3b22', () => {
+    ctx.moveTo(4, -6); ctx.quadraticCurveTo(0, -26, 14, -25); ctx.quadraticCurveTo(26, -25, 25, -15);
+    ctx.lineTo(21, -17); ctx.lineTo(18, -13); ctx.lineTo(15, -18); ctx.lineTo(11, -14); ctx.lineTo(9, -18); ctx.lineTo(7, -8); ctx.closePath();
+  });
+  shape('#d9463b', () => rr(3, -21, 22, 4, 2), 1.5);
+  shape('#d9463b', () => { ctx.moveTo(4, -20); ctx.lineTo(-6, -24 + wave); ctx.lineTo(-5, -18 + wave * 0.6); ctx.lineTo(4, -17); ctx.closePath(); }, 1.5);
+  ctx.fillStyle = OUT; ctx.fillRect(16, -13, 2.6, 4.5); ctx.fillRect(21.5, -13, 2.2, 4.5);
+  ctx.fillStyle = '#fff'; ctx.fillRect(16.4, -12.5, 1, 1.5); ctx.fillRect(21.8, -12.5, 1, 1.5);
+  ctx.fillStyle = OUT; ctx.fillRect(21, -6, 3, 1.2);
 }
 function drawHeroClimb(p) {
   const c = Math.sin(p.anim * 10);
