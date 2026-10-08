@@ -3465,18 +3465,23 @@ function saveState() {
     hintSeen: !G.hint,
   };
 }
-function writeLocal(s) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) {} G.savedAt = s.savedAt || 0; }
+// 本機存檔分格：訪客一格、每個雲端帳號各一格。帳號的角色只跟著帳號走，登出後回到訪客角色，
+// 避免登出後把帳號角色當成訪客進度註冊到新帳號（複製角色）。
+const slotKey = user => user ? SAVE_KEY + '@' + user.toLowerCase() : SAVE_KEY;   // 帳號名稱不分大小寫
+const curUser = () => CLOUD.token && CLOUD.user ? CLOUD.user : '';
+function writeLocal(s) { try { localStorage.setItem(slotKey(curUser()), JSON.stringify(s)); } catch (e) {} G.savedAt = s.savedAt || 0; }
 // 本機存檔；登入雲端時順便排程上傳（sync = true 表示重要事件，盡快上傳）
 function persist(sync) {
-  if (!G.player) return;
+  if (!G.player || CLOUD.switching) return;   // 登入切換角色期間不存檔，避免寫進錯的存檔格
   writeLocal(saveState());
   cloudQueue(sync === true);
 }
-// 讀取 v2 存檔；沒有時改讀第一階段（v1）存檔並遷移等級、經驗、金幣、藥水
-function loadLocal() {
+// 讀取 v2 存檔（user 空白＝訪客那格）；訪客沒有存檔時改讀第一階段（v1）存檔並遷移等級、經驗、金幣、藥水
+function loadLocal(user) {
   try {
-    const s = localStorage.getItem(SAVE_KEY);
+    const s = localStorage.getItem(slotKey(user));
     if (s) return JSON.parse(s);
+    if (user) return null;
     const o = localStorage.getItem(OLD_SAVE_KEY);
     if (o) {
       const d = JSON.parse(o), q = d && d.player;
@@ -3484,6 +3489,24 @@ function loadLocal() {
     }
   } catch (e) {}
   return null;
+}
+function clearGuestSave() { try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(OLD_SAVE_KEY); } catch (e) {} }
+// 換成另一格存檔的角色（登入／登出時）
+function switchChar(saved) {
+  G.player = makePlayer(saved && saved.player);
+  G.savedAt = saved && +saved.savedAt || 0;
+  resetWorld(); closeDlg(); G.ui.confirm = null;
+  updateCamera(0, true);
+}
+// 舊版只有一格存檔：已登入的玩家，那格就是帳號的角色，搬到帳號那格
+function slotMigrate() {
+  const u = curUser();
+  if (!u) return;
+  try {
+    const old = localStorage.getItem(SAVE_KEY);
+    if (old && !localStorage.getItem(slotKey(u))) localStorage.setItem(slotKey(u), old);
+    if (old) clearGuestSave();
+  } catch (e) {}
 }
 
 // ================= 雲端存檔與排行榜 =================
@@ -3498,6 +3521,7 @@ const CLOUD = {
   state: '',                // '' 尚未連線／ok 已連線／offline 連不上／error 伺服器拒絕
   busy: false, uploading: false, again: false, lastUpload: 0, timer: null, timerAt: 0,
   pending: null,            // 雲端與本機存檔不同時，等待玩家選擇：{ save, at }
+  switching: false,         // 剛登入、還在決定要用哪個角色（期間不存檔）
   form: { user: '', pass: '' }, msg: '', msgOk: false,
   rank: { by: 'level', data: {}, loading: false, err: '', errT: 0, unsup: false },   // unsup：舊版後端不支援 Boss 排行榜
 };
@@ -3540,7 +3564,7 @@ function cloudRefresh() { if (G.ui.win === 'account' || G.ui.win === 'rank') ren
 function fmtTime(ms) { if (!ms) return '—'; try { return new Date(ms).toLocaleString('zh-TW', { hour12: false }); } catch (e) { return '—'; } }
 // 連線失敗：token 失效就登出；連不上時只在狀態改變時提示一次
 function cloudFail(e) {
-  if (e && e.status === 401 && CLOUD.token) { cloudSignedOut('登入已過期，請重新登入（按 L）', false); return; }
+  if (e && e.status === 401 && CLOUD.token) { cloudSignedOut('登入已過期，已回到訪客角色；按 L 重新登入即可繼續', false); return; }
   const was = CLOUD.state;
   CLOUD.state = e && e.offline ? 'offline' : 'error';
   CLOUD.msg = (e && e.msg) || '雲端同步失敗'; CLOUD.msgOk = false;
@@ -3583,26 +3607,38 @@ function hasLocalProgress() {
   const p = G.player;
   return !!p && (p.lv > 1 || p.exp > 0 || p.coins > 0 || p.stats.kills > 0 || p.stats.bossKills > 0 || Object.keys(p.quests).length > 0);
 }
-// 登入後（或開啟遊戲時已是登入狀態）比對雲端與本機存檔
-async function cloudCheck(atStartup) {
+// 登入後（或開啟遊戲時已是登入狀態）比對雲端與本機存檔；成功連上雲端時回傳 true
+// fromGuest：剛登入、這台裝置沒有這個帳號的存檔，目前畫面上是訪客角色
+async function cloudCheck(atStartup, fromGuest) {
   let r;
-  try { r = await api('GET', '/api/save'); } catch (e) { cloudFail(e); return; }
-  if (!CLOUD.token) return;
-  if (typeof r.username === 'string' && r.username) CLOUD.user = r.username;
+  try { r = await api('GET', '/api/save'); } catch (e) { cloudFail(e); return false; }
+  if (!CLOUD.token) return false;
+  if (typeof r.username === 'string' && r.username && r.username.toLowerCase() === CLOUD.user.toLowerCase()) CLOUD.user = r.username;
   cloudOk(); cloudSaveToken();
   const cloud = r.save && typeof r.save === 'object' && r.save.player ? r.save : null;
   const cloudAt = cloud ? +cloud.savedAt || 0 : 0;
+  if (fromGuest) {
+    CLOUD.switching = false;
+    if (cloud) { cloudApply(cloud); toast('已載入雲端存檔', '#9ff0c8'); return true; }   // 訪客角色留在訪客那格，不受影響
+    // 帳號還沒有存檔：把訪客進度搬進帳號，訪客那格清空（同一份進度不能再註冊到其他帳號）
+    const moved = hasLocalProgress();
+    if (!await cloudUpload()) return false;
+    clearGuestSave();
+    if (moved) toast('已將訪客進度移到這個帳號', '#9ff0c8');
+    return true;
+  }
   if (!cloud) {   // 雲端還沒有存檔：直接上傳本機進度
     if (await cloudUpload() && !atStartup) toast('已將目前進度上傳到雲端', '#9ff0c8');
-    return;
+    return true;
   }
-  if (cloudAt && cloudAt === G.savedAt) { CLOUD.lastSync = Date.now(); cloudSaveToken(); cloudRefresh(); return; }   // 兩邊是同一份
-  if (!hasLocalProgress()) { cloudApply(cloud); toast('已載入雲端存檔', '#9ff0c8'); return; }
-  if (atStartup && cloudAt < G.savedAt) { cloudQueue(true); return; }   // 本機比較新（例如離線時玩的）：上傳本機
+  if (cloudAt && cloudAt === G.savedAt) { CLOUD.lastSync = Date.now(); cloudSaveToken(); cloudRefresh(); return true; }   // 兩邊是同一份
+  if (!hasLocalProgress()) { cloudApply(cloud); toast('已載入雲端存檔', '#9ff0c8'); return true; }
+  if (atStartup && cloudAt < G.savedAt) { cloudQueue(true); return true; }   // 本機比較新（例如離線時玩的）：上傳本機
   CLOUD.pending = { save: cloud, at: Date.parse(r.updated_at) || cloudAt };
   G.ui.confirm = null;
   toast(atStartup ? '雲端有不同的存檔，請按 L 選擇要使用哪一份' : '請選擇要使用本機或雲端的存檔', '#ffe066');
   cloudRefresh();
+  return true;
 }
 // 套用雲端存檔（資料一樣經過 makePlayer 驗證）
 function cloudApply(save) {
@@ -3646,15 +3682,26 @@ async function cloudAuth(kind) {
   try {
     const r = await api('POST', kind === 'login' ? '/api/login' : '/api/register', { username: user, password: pass });
     if (typeof r.token !== 'string' || !r.token) throw { msg: '伺服器回應格式錯誤' };
+    writeLocal(saveState());   // 先存好訪客角色
     CLOUD.token = r.token; CLOUD.user = String(r.username || user);
     CLOUD.form.pass = ''; CLOUD.msg = ''; CLOUD.state = ''; CLOUD.rank.data = {};
     cloudSaveToken();
+    const cache = loadLocal(CLOUD.user);
+    if (cache) switchChar(cache);   // 這台裝置有這個帳號的存檔：換成帳號的角色，再和雲端比對
+    else CLOUD.switching = true;    // 沒有：先保留訪客角色，等讀到雲端存檔再決定
     toast(kind === 'login' ? `登入成功，歡迎回來 ${CLOUD.user}` : `註冊成功，歡迎 ${CLOUD.user}`, '#9ff0c8'); SFX.quest();
     netWake();
-    await cloudCheck(false);
+    if (!await cloudCheck(!!cache, !cache) && !cache && CLOUD.token) {
+      // 讀不到雲端存檔就不知道該用哪個角色：取消登入，訪客角色維持原狀
+      const u = CLOUD.user;
+      CLOUD.switching = true;   // 目前畫面上還是訪客角色，登出時不要寫進帳號那格
+      cloudSignedOut('無法讀取雲端存檔，請稍後再登入', false);
+      try { localStorage.removeItem(slotKey(u)); } catch (err) {}
+    }
   } catch (e) {
     CLOUD.msg = (e && e.msg) || '登入失敗'; CLOUD.msgOk = false; SFX.deny();
   }
+  CLOUD.switching = false;
   CLOUD.busy = false; cloudRefresh();
 }
 async function cloudLogout() {
@@ -3663,14 +3710,18 @@ async function cloudLogout() {
   if (!CLOUD.pending) await cloudUpload();   // 登出前先上傳最新進度
   if (CLOUD.token) { try { await api('POST', '/api/logout'); } catch (e) {} }
   CLOUD.busy = false;
-  if (CLOUD.token) cloudSignedOut('已登出，進度仍保存在這台裝置', true);
+  if (CLOUD.token) cloudSignedOut('已登出，回到訪客角色（帳號角色保存在雲端）', true);
 }
+// 登出（或登入過期）：帳號角色留在帳號那格，畫面換回訪客角色
 function cloudSignedOut(msg, ok) {
   clearTimeout(CLOUD.timer); CLOUD.timer = null;
+  const wasUser = !CLOUD.switching && curUser();
+  if (wasUser && G.player) writeLocal(saveState());
   if (CLOUD.user) CLOUD.form.user = CLOUD.user;
   CLOUD.token = null; CLOUD.user = ''; CLOUD.pending = null; CLOUD.state = ''; CLOUD.lastSync = 0; CLOUD.rank.data = {};
   CLOUD.msg = msg; CLOUD.msgOk = ok;
   cloudSaveToken();
+  if (wasUser) switchChar(loadLocal(''));
   toast(msg, ok ? '#d8cfb4' : '#ffb3a8');
   cloudRefresh();
   netWake();
@@ -3692,8 +3743,7 @@ async function rankLoad(by) {
   R.loading = false;
   if (G.ui.win === 'rank') renderWin();
 }
-function cloudInit() {
-  cloudLoadToken();
+function cloudInit() {   // 登入資訊在 start() 讀取存檔前就先載入（決定要讀哪一格存檔）
   if (cloudOn()) cloudCheck(true);
 }
 // ================= 多人同步（第五階段）：在線狀態、頻道、聊天、表情 =================
@@ -4391,7 +4441,7 @@ const WIN = {
         <div class="d dim" style="margin-top:4px">帳號 2～12 個字（英文字母、數字、底線或中文）；密碼至少 6 碼。</div>
         <div class="acts2"><button class="sb" type="submit" ${busy}>登入</button><button class="sb alt" type="button" data-do="register" ${busy}>註冊新帳號</button></div>
         <div class="msg ${CLOUD.msgOk ? 'ok' : 'bad'}">${esc(CLOUD.msg)}</div></form>
-        <div class="d dim">不登入也能正常遊玩，進度會保存在這台裝置。</div>` + recordCard();
+        <div class="d dim">不登入也能正常遊玩，進度會保存在這台裝置（訪客角色）。註冊新帳號時，訪客進度會移到新帳號，訪客角色重新開始；登出後會回到訪客角色。</div>` + recordCard();
       return [h, '<span class="keyOnly">輸入完按 Enter 登入・Esc 關閉</span>'];
     }
     if (CLOUD.pending) {
@@ -4716,7 +4766,7 @@ function setupUI() {
   $('resetNo').addEventListener('click', e => { e.stopPropagation(); $('resetBox').classList.remove('show'); });
   $('resetYes').addEventListener('click', e => {
     e.stopPropagation();
-    try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(OLD_SAVE_KEY); } catch (err) {}
+    if (curUser()) { try { localStorage.removeItem(slotKey(curUser())); } catch (err) {} } else clearGuestSave();
     G.player = makePlayer({}); resetWorld();
     G.ui.win = null; G.ui.dlg = null; G.ui.confirm = null; renderWin(); renderDlg();
     updateCamera(0, true);
@@ -4825,7 +4875,8 @@ function start(data) {
   if (G.started) return;
   G.started = true;
   data = data || {};
-  const saved = data.player ? data : loadLocal();
+  cloudLoadToken(); slotMigrate();
+  const saved = data.player ? data : loadLocal(curUser());
   G.player = makePlayer(saved && saved.player);
   G.savedAt = saved && +saved.savedAt || 0;
   G.monsters = SPAWNS.map(makeMonster);
