@@ -48,7 +48,7 @@ cd ~/mistwood/server
 python -m pytest -q
 ```
 
-看到 `25 passed` 就代表正常。
+看到 `46 passed`（全部通過、沒有 failed）就代表正常。
 
 ## 步驟 3：在 Web 分頁建立網站
 
@@ -110,9 +110,9 @@ from app import app as application  # noqa: E402
    - 前端 `index.html` 開頭的 `PA_USERNAME` 已經設為 `'peoplepop'`，不需要再改。
    - 資料庫檔案會在第一次有人呼叫 API 時自動建立在 `~/mistwood-data/mistwood.db`。
 
-## 之後更新程式
+## 更新後端
 
-GitHub 上的程式有更新時，在 Bash console 輸入：
+GitHub 上的程式有更新時（例如第四階段），在 PythonAnywhere 的 Bash console 輸入：
 
 ```bash
 cd ~/mistwood
@@ -126,7 +126,15 @@ workon mistwood-venv
 pip install -r ~/mistwood/server/requirements.txt
 ```
 
-最後到 **Web** 分頁按 **Reload**，新程式才會生效。
+最後到 **Web** 分頁按 **Reload**，新程式才會生效（**沒按 Reload，伺服器會繼續跑舊程式**）。
+
+- **資料庫會自動升級**：Reload 後第一次有人呼叫 API 時，程式會自動替舊資料庫補上新欄位／新資料表，
+  既有的帳號與存檔都會保留，不需要手動執行任何 SQL。保險起見，更新前可以先照下面「備份資料庫」做一份備份。
+- **第四階段（Boss 排行榜、存檔合理性檢查、註冊頻率限制）一定要做 `git pull` + Reload**：
+  新版前端會向後端要 `by=boss` 的排行榜，舊後端會回 400（前端雖然會處理，但 Boss 排行榜就看不到）。
+- 更新後可以用瀏覽器開 https://peoplepop.pythonanywhere.com/api/leaderboard?by=boss 確認，
+  有回傳 `{"by": "boss", ...}` 就代表新版已經生效。
+- 被合理性檢查標記的存檔會照樣保存，只是不列入排行榜；Error log 會出現「存檔被標記」的 WARNING，方便查看。
 （前端 `index.html` 推到 GitHub 後，GitHub Pages 會自動更新，不需要動 PythonAnywhere。）
 
 ## 出問題時：查看 log

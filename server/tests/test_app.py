@@ -6,9 +6,12 @@ def auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def make_save(lv=1, coins=0, kills=0, job="novice"):
-    """產生一份最小的測試存檔（格式和前端 saveState() 一樣）"""
-    return {"v": 2, "savedAt": 1700000000000, "player": {"lv": lv, "coins": coins, "job": job, "stats": {"kills": kills}}}
+def make_save(lv=1, coins=0, kills=0, job="novice", boss=None):
+    """產生一份最小的測試存檔（格式和前端 saveState() 一樣）；boss=None 代表舊版存檔沒有 bossKills"""
+    stats = {"kills": kills}
+    if boss is not None:
+        stats["bossKills"] = boss
+    return {"v": 2, "savedAt": 1700000000000, "player": {"lv": lv, "coins": coins, "job": job, "stats": stats}}
 
 
 # ---------- 健康檢查與錯誤格式 ----------
@@ -213,7 +216,7 @@ def test_leaderboard_limit_and_my_rank(client, register):
     tokens = setup_leaderboard(client, register)
     data = client.get("/api/leaderboard?by=gold&limit=2", headers=auth(tokens["delta"])).get_json()
     assert len(data["entries"]) == 2
-    assert data["me"] == {"username": "delta", "rank": 4, "value": 50}   # 不在前 2 名也看得到自己的名次
+    assert data["me"] == {"username": "delta", "rank": 4, "value": 50, "ranked": True}   # 不在前 2 名也看得到自己的名次
 
 
 def test_leaderboard_uses_server_side_values(client, register):
