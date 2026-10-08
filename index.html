@@ -9,7 +9,6 @@ html,body{height:100%;margin:0;overscroll-behavior:none;touch-action:pan-x pan-y
 body{background:#0e1714;color:#f1ead8;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei","Heiti TC",system-ui,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 #app{height:100%;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
 #center{display:flex;flex-direction:column;align-items:center;min-width:0}
-.side{display:none;align-items:center;justify-content:center;padding:0 8px}
 #stage{position:relative;line-height:0;border-radius:8px 8px 0 0;overflow:hidden;background:#000}
 canvas{display:block;touch-action:none}
 #topbtns{position:absolute;top:6px;left:6px;display:flex;gap:6px;line-height:1}
@@ -45,15 +44,27 @@ canvas{display:block;touch-action:none}
 #expbar{position:relative;height:13px;margin:6px -8px 0;background:#0b110e;border-top:1px solid #000}
 #expbar i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(#fff0a8,#e0a92a);transition:width .2s}
 #expbar span{position:absolute;inset:0;font-size:10px;line-height:12px;text-align:center;font-weight:800;color:#fff;text-shadow:0 1px 1px #000,0 0 2px #000}
-#bottomCtl{display:none;justify-content:space-between;align-items:center;padding:8px 6px calc(8px + env(safe-area-inset-bottom));width:100%;gap:8px}
-.pad{--c:min(54px,calc((100vw - 64px)/6));display:grid;gap:6px;touch-action:none}
-#dpad{grid-template-columns:repeat(3,var(--c));grid-template-rows:repeat(2,var(--c))}
-#acts{grid-template-columns:repeat(3,calc(var(--c)*1.05));grid-template-rows:repeat(3,var(--c))}
-.tb.tbs{font-size:12px;line-height:1.1;background:rgba(36,66,62,.88)}
-.tb{font:inherit;font-weight:800;font-size:14px;border-radius:12px;border:1.5px solid #6f917b;background:rgba(40,58,48,.85);color:#f1ead8;touch-action:none;padding:0;-webkit-user-select:none;user-select:none}
-.tb.on{background:#e6a93a;color:#2a1d05;border-color:#ffe08a}
-.tb.big{background:rgba(70,92,60,.9)}
-.side .pad{--c:min(58px,15vh)}
+/* 觸控模式：HUD 移到上方、遊戲畫面填滿其餘空間，搖桿與按鈕以半透明方式疊在畫面上（桌機不顯示） */
+body.touch #hud{order:-1;border-top:none;border-bottom:2px solid #5d7e69;padding:calc(4px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left))}
+body.touch #expbar{margin:5px calc(-8px - env(safe-area-inset-right)) 0 calc(-8px - env(safe-area-inset-left))}
+body.touch #stage{border-radius:0}
+body.touch #topbtns{left:calc(6px + env(safe-area-inset-left))}
+body.touch .mini-btn{padding:6px 10px}
+#safeProbe{position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#tctl{display:none;position:absolute;inset:0;pointer-events:none;line-height:1.1;--ta:.3}
+body.touch #tctl{display:block}
+.tb{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;font:inherit;font-weight:800;border-radius:50%;border:1.5px solid rgba(255,255,255,calc(var(--ta) + .25));background:rgba(18,30,24,var(--ta));color:#fff;text-shadow:0 1px 2px #000,0 0 3px #000;touch-action:none;padding:0 2px;pointer-events:auto;-webkit-user-select:none;user-select:none;overflow:hidden;word-break:break-all}
+.tb.big{background:rgba(70,92,60,calc(var(--ta) + .05));border-width:2px}
+.tb.tbs{background:rgba(36,66,62,var(--ta))}
+.tb.on{background:rgba(230,169,58,calc(var(--ta) + .4));border-color:#ffe08a;color:#2a1d05;text-shadow:none}
+.tb.tbs:after{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(0,0,0,.6) calc(var(--p,0)*1turn),transparent 0);pointer-events:none}
+.tb.pt{padding-bottom:.85em}
+.tb.pt:after{content:attr(data-n);position:absolute;left:0;right:0;bottom:9%;font-size:10px;font-weight:900;color:#ffe9a8}
+.tb.lack{color:#ffb3a8}
+#jz{position:absolute;left:0;top:0;pointer-events:auto;touch-action:none}
+#joy{position:absolute;left:0;top:0;border-radius:50%;border:2px solid rgba(255,255,255,calc(var(--ta) + .15));background:rgba(255,255,255,calc(var(--ta) * .25));pointer-events:none;display:none}
+#joy.idle{opacity:.55}
+#joy i{position:absolute;left:50%;top:50%;border-radius:50%;background:rgba(255,255,255,calc(var(--ta) + .2));border:1.5px solid rgba(255,255,255,.6);box-shadow:0 0 8px rgba(0,0,0,.35)}
 .ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,14,12,.66);z-index:10;padding:16px}
 .ov.show{display:flex}
 .card{background:linear-gradient(#2c3d33,#1a241f);border:2px solid #6f917b;border-radius:14px;padding:18px 20px;max-width:440px;width:100%;max-height:100%;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.55);text-align:center;line-height:1.5}
@@ -172,10 +183,15 @@ body.touch .menus{display:none}
 </style>
 
 <div id="app">
-  <div id="sideL" class="side"></div>
   <div id="center">
     <div id="stage">
       <canvas id="game" aria-label="晨霧森林 遊戲畫面"></canvas>
+      <div id="tctl" aria-hidden="true">
+        <div id="jz"></div><div id="joy"><i></i></div>
+        <button class="tb tbs" data-act="sk1" id="tbS0">X</button><button class="tb tbs" data-act="sk2" id="tbS1">A</button><button class="tb tbs" data-act="sk3" id="tbS2">S</button><button class="tb tbs" data-act="sk4" id="tbS3">D</button>
+        <button class="tb pt" data-act="hp" id="tbHp">紅藥</button><button class="tb pt" data-act="mp" id="tbMp">藍藥</button>
+        <button class="tb big" data-act="jump">跳躍</button><button class="tb big" data-act="attack">攻擊</button>
+      </div>
       <div id="topbtns"><button class="mini-btn" id="helpBtn">說明</button><button class="mini-btn" id="muteBtn">音效：開</button><button class="mini-btn" id="menuBtn">選單</button></div>
       <div id="win" class="win" role="dialog" aria-label="遊戲選單"></div>
       <div id="dlg" class="dlg" role="dialog" aria-label="NPC 對話"></div>
@@ -206,20 +222,10 @@ body.touch .menus{display:none}
       </div>
       <div id="expbar"><i id="expF"></i><span id="expT">EXP 0 / 15（0.00%）</span></div>
     </div>
-    <div id="bottomCtl"></div>
   </div>
-  <div id="sideR" class="side"></div>
 </div>
 
-<div id="dpad" class="pad">
-  <span></span><button class="tb" data-act="up">▲</button><span></span>
-  <button class="tb" data-act="left">◀</button><button class="tb" data-act="down">▼</button><button class="tb" data-act="right">▶</button>
-</div>
-<div id="acts" class="pad">
-  <button class="tb tbs" data-act="sk1" id="tbS0">X</button><button class="tb tbs" data-act="sk2" id="tbS1">A</button><button class="tb" data-act="hp">紅藥</button>
-  <button class="tb tbs" data-act="sk3" id="tbS2">S</button><button class="tb tbs" data-act="sk4" id="tbS3">D</button><button class="tb" data-act="mp">藍藥</button>
-  <button class="tb big" data-act="attack" style="grid-column:span 2">攻擊</button><button class="tb big" data-act="jump">跳躍</button>
-</div>
+<div id="safeProbe"></div>
 
 <div id="rotHint" role="note"><span>↻ 將手機轉為橫向，畫面更大、更好操作</span><button class="sb alt" id="rotOk">知道了</button></div>
 
@@ -238,7 +244,7 @@ body.touch .menus{display:none}
     <tr><td>L / R</td><td>帳號（雲端存檔）/ 排行榜</td></tr>
     <tr><td>O / Esc</td><td>設定（音量、開視窗是否暫停、按鍵說明）</td></tr>
   </table>
-  <div class="touchOnly note">使用畫面兩側（直向時在下方）的按鈕操作：方向鍵移動與攀爬，沒有繩索時按 ▼ 趴下，按住 ▼ 再按「跳躍」可從平台跳下。靠近 NPC 按 ▲ 或點擊 NPC 對話；畫面左上角的「選單」可開啟技能、背包、裝備、任務、帳號、排行榜與設定。建議橫向遊玩。</div>
+  <div class="touchOnly note"><b>左半邊畫面按住滑動來移動／攀爬／趴下</b>：左右滑移動；往上滑抓住繩索往上爬（靠近 NPC 時往上滑可對話）；往下滑往下爬，沒有繩索時趴下；斜上方滑可邊走邊抓繩索。按住下滑再按「跳躍」可從平台跳下。右下角為攻擊、跳躍、4 個技能與紅／藍藥水；也可直接點擊 NPC 對話。畫面左上角的「選單」可開啟技能、背包、裝備、任務、帳號、排行榜與設定（可調整按鈕透明度）。建議橫向遊玩。</div>
   <p class="note">怪物掉落的金幣、藥水與裝備，<b>碰觸即自動拾取</b>。Lv.10 可找村口的雷歐轉職，Lv.30 可再接受二轉試煉。森林最深處的「霧谷遺跡」盡頭有強大的 Boss「霧之守衛」。</p>
   <p class="note">開啟視窗時遊戲<b>不會暫停</b>（怪物仍會攻擊）；可在設定（O）中改成開視窗時暫停。</p>
   <p class="note">在「帳號」視窗註冊／登入後，進度會自動備份到雲端，並可參加等級、擊殺數、金幣、Boss 排行榜。不登入也能正常遊玩（進度存在這台裝置）。</p>
@@ -577,12 +583,14 @@ let VIEW_W = 960, VIEW_H = 540, SCALE = 1;
 
 // ================= 設定（獨立的 localStorage 鍵值，與存檔分開） =================
 const SET_KEY = 'mistwood_settings';
-const SETTINGS = { pause: false, vol: 0.8, mute: false };   // pause：開視窗時暫停遊戲（預設關閉，和楓之谷一樣）
+const SETTINGS = { pause: false, vol: 0.8, mute: false, tAlpha: 0.3, joyRing: true };   // pause：開視窗時暫停遊戲（預設關閉，和楓之谷一樣）；tAlpha／joyRing：觸控按鈕底色不透明度、是否顯示搖桿圈
 try {
   const o = JSON.parse(localStorage.getItem(SET_KEY) || 'null');
   if (o && typeof o === 'object') {
     SETTINGS.pause = o.pause === true; SETTINGS.mute = o.mute === true;
     if (typeof o.vol === 'number' && isFinite(o.vol)) SETTINGS.vol = Math.min(1, Math.max(0, o.vol));
+    if (typeof o.tAlpha === 'number' && isFinite(o.tAlpha)) SETTINGS.tAlpha = Math.min(0.8, Math.max(0.1, o.tAlpha));
+    SETTINGS.joyRing = o.joyRing !== false;
   } else SETTINGS.mute = (localStorage.getItem(SAVE_KEY + '_mute') ?? localStorage.getItem(OLD_SAVE_KEY + '_mute')) === '1';   // 沿用舊的靜音設定
 } catch (e) {}
 function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(SETTINGS)); } catch (e) {} }
@@ -666,7 +674,10 @@ const KEYMAP = {
 };
 const MENU_KEYS = { KeyK: 'skill', KeyI: 'bag', KeyE: 'equip', KeyQ: 'quest', KeyL: 'account', KeyR: 'rank', KeyO: 'settings' };
 function setAction(a, on) { if (on && !held[a]) pressed[a] = true; held[a] = on; }
-function releaseAll() { for (const k in held) held[k] = false; for (const k in pressed) pressed[k] = false; document.querySelectorAll('.tb.on').forEach(b => b.classList.remove('on')); }
+function releaseAll() {
+  for (const k in held) held[k] = false; for (const k in pressed) pressed[k] = false; document.querySelectorAll('.tb.on').forEach(b => b.classList.remove('on'));
+  JOY.id = null; for (const k in JOY.dir) JOY.dir[k] = false; joyDraw();   // 觸控搖桿也一併放開（手指需重新按下）
+}
 // 焦點在文字輸入框時，按鍵只用來打字，不觸發任何遊戲操作（設定視窗的勾選框／滑桿不算）
 const isTyping = t => !!t && ((t.tagName === 'INPUT' && !/^(checkbox|range|radio|button|submit)$/.test(t.type)) || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 const paused = () => SETTINGS.pause && uiBusy();   // 開視窗時是否暫停遊戲
@@ -689,7 +700,8 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { if (isTyping(e.target)) return; const a = KEYMAP[e.code]; if (a) { e.preventDefault(); setAction(a, false); } });
 addEventListener('blur', releaseAll);
 function setupTouch() {
-  document.querySelectorAll('[data-act]').forEach(b => {
+  // 右下角的動作按鈕：每顆按鈕各自追蹤自己的 pointer，可和搖桿同時操作（多指）
+  document.querySelectorAll('#tctl [data-act]').forEach(b => {
     const a = b.dataset.act;
     b.addEventListener('pointerdown', e => {
       e.preventDefault(); initAudio();
@@ -700,6 +712,86 @@ function setupTouch() {
     ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => b.addEventListener(t, off));
     b.addEventListener('contextmenu', e => e.preventDefault());
   });
+  // 搖桿區：按下後以 pointer capture 接收移動與放開（手指滑出搖桿區也不會中斷）
+  const jz = $('jz');
+  jz.addEventListener('pointerdown', joyDown);
+  jz.addEventListener('pointermove', joyMove);
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => jz.addEventListener(t, joyEnd));
+  jz.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+// ---- 觸控搖桿：在畫面左側按下的位置當作原點（浮動搖桿），滑動方向對應 ←→↑↓，與鍵盤共用 held／pressed ----
+const JOY_DEAD = 14;   // 死區（CSS px）：手指離原點超過這個距離才算按下方向
+const JOY = { id: null, ox: 0, oy: 0, x: 0, y: 0, rx: 0, ry: 0, r: 50, dir: { left: false, right: false, up: false, down: false } };
+const TL = { u: 50, w: 0, h: 0, safe: { t: 0, r: 0, b: 0, l: 0 } };   // 觸控版面：按鈕單位尺寸 u、遊戲區大小、安全區域（瀏海／圓角）
+// 點擊 NPC：走得夠近就對話並回傳 true；quiet 時（搖桿區）點到太遠的 NPC 不提示，直接當作移動
+function npcTap(e, quiet) {
+  const p = G.player, r = cv.getBoundingClientRect();
+  const wx = (e.clientX - r.left) / r.width * VIEW_W + G.cam.x, wy = (e.clientY - r.top) / r.height * VIEW_H + G.cam.y;
+  const n = NPCS.find(n => Math.abs(wx - n.x) < 26 && wy > GROUND_Y - 90 && wy < GROUND_Y + 22);
+  if (!n) return false;
+  if (Math.abs(p.x - n.x) > 170 || p.y < GROUND_Y - 4) { if (!quiet) toast(`請走近「${n.name}」再對話`, '#d8cfb4'); return false; }
+  talkTo(n);
+  return true;
+}
+// 搖桿區（#jz，遊戲區左側 45%、避開左上角按鈕列）按下：先判斷是否點到 NPC，否則啟動搖桿
+function joyDown(e) {
+  initAudio();
+  const p = G.player;
+  e.preventDefault();
+  if (JOY.id !== null || G.hint || G.deathShown || !p || p.dead) return;
+  if (!uiBusy() && npcTap(e, true)) return;
+  if (G.ui.dlg || paused()) return;   // 開著視窗（且沒有暫停）時仍可移動，和以前的觸控方向鍵一樣
+  const r = $('stage').getBoundingClientRect(), jz = $('jz');
+  JOY.id = e.pointerId; JOY.rx = r.left; JOY.ry = r.top;
+  JOY.ox = JOY.x = e.clientX - r.left; JOY.oy = JOY.y = e.clientY - r.top;
+  try { jz.setPointerCapture(e.pointerId); } catch (err) {}
+  joyDraw();
+}
+function joyMove(e) {
+  if (JOY.id === null || e.pointerId !== JOY.id) return;
+  JOY.x = e.clientX - JOY.rx; JOY.y = e.clientY - JOY.ry;
+  let dx = JOY.x - JOY.ox, dy = JOY.y - JOY.oy;
+  const dist = Math.hypot(dx, dy);
+  const fr = JOY.r * 0.7;
+  if (dist > fr) {   // 超出 0.7 倍半徑時，原點跟著手指移動：往反方向滑一小段（約 0.7 倍半徑＋死區）就能立刻轉向
+    JOY.ox = JOY.x - dx / dist * fr; JOY.oy = JOY.y - dy / dist * fr;
+    dx = JOY.x - JOY.ox; dy = JOY.y - JOY.oy;
+  }
+  joyDirs(dx, dy, Math.min(dist, fr));
+  joyDraw();
+}
+// 依角度判斷方向（斜向可同時按下水平與垂直，例如 ↗ 抓繩索＋移動）；已按下的方向放寬門檻，避免在邊界上閃爍
+function joyDirs(dx, dy, dist) {
+  const d = JOY.dir, ax = Math.abs(dx), ay = Math.abs(dy);
+  const on = dist >= (d.left || d.right || d.up || d.down ? JOY_DEAD * 0.7 : JOY_DEAD);
+  const h = on && ax > (d.left || d.right ? 0.35 : 0.5) * ay;    // 水平：偏離垂直線超過約 27°（按住中放寬到約 19°）
+  const up = on && dy < 0 && ay > (d.up ? 0.45 : 0.6) * ax;     // 上：仰角超過約 31°（按住中約 24°）
+  const dn = on && dy > 0 && ay > (d.down ? 0.8 : 1) * ax;      // 下：俯角超過 45°（按住中約 39°），避免走路時誤觸趴下
+  joySet('left', h && dx < 0); joySet('right', h && dx > 0); joySet('up', up); joySet('down', dn);
+}
+function joySet(a, on) { if (JOY.dir[a] !== on) { JOY.dir[a] = on; setAction(a, on); } }
+function joyEnd(e) {
+  if (JOY.id === null || (e && e.pointerId !== JOY.id)) return;
+  const id = JOY.id;
+  for (const a in JOY.dir) joySet(a, false);
+  JOY.id = null;
+  try { const jz = $('jz'); if (jz.hasPointerCapture(id)) jz.releasePointerCapture(id); } catch (err) {}
+  joyDraw();
+}
+// 搖桿圈：按住時顯示在原點、圓點跟著手指；沒按時在左下角顯示淡淡的位置提示（設定可關閉）
+function joyDraw() {
+  const el = $('joy');
+  if (!el) return;
+  if (!isTouch || !SETTINGS.joyRing) { el.style.display = 'none'; return; }
+  const act = JOY.id !== null, R = JOY.r, k = Math.round(R * 0.8), S = TL.safe;
+  const ox = act ? JOY.ox : S.l + R + 16, oy = act ? JOY.oy : TL.h - S.b - R - 16;
+  el.style.display = 'block'; el.classList.toggle('idle', !act);
+  el.style.width = el.style.height = R * 2 + 'px';
+  el.style.transform = `translate(${Math.round(ox - R)}px,${Math.round(oy - R)}px)`;
+  const kn = el.firstElementChild;
+  kn.style.width = kn.style.height = k + 'px';
+  kn.style.transform = `translate(${Math.round((act ? JOY.x - ox : 0) - k / 2)}px,${Math.round((act ? JOY.y - oy : 0) - k / 2)}px)`;
 }
 
 // ================= 遊戲狀態 =================
@@ -2746,7 +2838,7 @@ function drawBossBar() {
   const p = G.player, m = G.monsters.find(m => m.d.boss);
   if (!p || !m || m.dead || p.x < ARENA_X - 420) return;
   const d = m.d, cw = cv.clientWidth || VIEW_W, k = VIEW_W / cw, tb = $('topbtns');
-  const x0 = Math.round(((tb && tb.offsetWidth) || 120) * k) + 16, x1 = VIEW_W - miniW() - 24, bw = Math.max(120, x1 - x0), y = 8, bh = 18;
+  const x0 = Math.round(((tb && tb.offsetWidth) || 120) * k) + 16 + safeV('l'), x1 = VIEW_W - miniW() - 24 - safeV('r'), bw = Math.max(120, x1 - x0), y = 8, bh = 18;
   const f = Math.max(0, m.hp / d.hp), ph2 = m.boss && m.boss.phase === 2;
   ctx.save();
   ctx.fillStyle = 'rgba(14,10,20,.8)'; ctx.beginPath(); rr(x0 - 4, y - 3, bw + 8, bh + 6, 6); ctx.fill();
@@ -2762,8 +2854,10 @@ function drawBossBar() {
 }
 // ================= HUD（畫布內）：小地圖 / 提示 / 橫幅 =================
 const miniW = () => VIEW_W < 700 ? 150 : 210;
+// 觸控裝置的安全區域（瀏海）換算成畫布座標；桌機為 0
+const safeV = side => isTouch && cv.clientWidth ? TL.safe[side] * VIEW_W / cv.clientWidth : 0;
 function drawMinimap() {
-  const mw = miniW(), mh = Math.round(mw * 0.24), mx = VIEW_W - mw - 8, my = 24;
+  const mw = miniW(), mh = Math.round(mw * 0.24), mx = VIEW_W - mw - 8 - safeV('r'), my = 24;
   const Y0 = 260, Y1 = WORLD_H - 30, sx = mw / WORLD_W, sy = mh / (Y1 - Y0);
   const X = x => mx + x * sx, Y = y => my + (y - Y0) * sy;
   ctx.save();
@@ -2792,12 +2886,13 @@ function drawMinimap() {
 function drawToasts() {
   ctx.save(); ctx.font = `700 13px ${FONT}`; ctx.textAlign = 'left';
   let y = VIEW_H - 12;
+  const sl = safeV('l');
   for (let i = G.toasts.length - 1; i >= 0; i--) {
     const t = G.toasts[i], a = t.t > 2.4 ? 1 - (t.t - 2.4) / 0.6 : Math.min(1, t.t * 8);
     ctx.globalAlpha = Math.max(0, a);
     const w = ctx.measureText(t.text).width + 16;
-    ctx.fillStyle = 'rgba(14,23,20,.72)'; ctx.beginPath(); rr(8, y - 18, w, 22, 6); ctx.fill();
-    ctx.fillStyle = t.color; ctx.fillText(t.text, 16, y - 3);
+    ctx.fillStyle = 'rgba(14,23,20,.72)'; ctx.beginPath(); rr(8 + sl, y - 18, w, 22, 6); ctx.fill();
+    ctx.fillStyle = t.color; ctx.fillText(t.text, 16 + sl, y - 3);
     y -= 26;
   }
   ctx.restore();
@@ -3046,7 +3141,7 @@ function drawNpcs() {
     else if (mk === 'active') outlinedText('?', n.x, by, 24, '#c9d1cc', '#2b2f2d', 900, 5);
     else if (n.shop) { shape('#f3c45a', () => ell(n.x, by - 9, 9, 9), 2, '#5a3a06'); ctx.font = `900 10px ${FONT}`; ctx.fillStyle = '#5a3a06'; ctx.fillText('商', n.x, by - 5.5); }
     if (n === near && !G.ui.win && !G.ui.dlg) {
-      const t = isTouch ? '▲ 或點我對話' : '↑ 對話', ty = by - 34;
+      const t = isTouch ? '往上滑或點我對話' : '↑ 對話', ty = by - 34;
       ctx.font = `800 12px ${FONT}`;
       const w = ctx.measureText(t).width + 14;
       ctx.fillStyle = 'rgba(255,250,235,.95)'; ctx.beginPath(); rr(n.x - w / 2, ty - 14, w, 20, 6); ctx.fill();
@@ -3059,7 +3154,7 @@ function drawNpcs() {
 // 畫面左上：增益圖示與任務追蹤
 function hudTop() { const w = cv.clientWidth || VIEW_W; return Math.round(36 * VIEW_W / w); }
 function drawTracker() {
-  const p = G.player, x = 8;
+  const p = G.player, x = 8 + safeV('l');
   let y = hudTop();
   ctx.save();
   const bids = Object.keys(p.buffs);
@@ -3175,6 +3270,8 @@ function updateHud() {
   setText('expT', `EXP ${p.exp} / ${need}（${(p.exp / need * 100).toFixed(2)}%）`); setW('expF', p.exp / need);
   setText('coinT', p.coins.toLocaleString());
   setText('potHp', String(p.pots.hp)); setText('potMp', String(p.pots.mp));
+  const pn = p.pots.hp + '/' + p.pots.mp;
+  if (hudCache.tbPot !== pn) { hudCache.tbPot = pn; $('tbHp').dataset.n = p.pots.hp; $('tbMp').dataset.n = p.pots.mp; }   // 觸控藥水按鈕上的數量
   for (let i = 0; i < 4; i++) {
     const id = p.keys[i], S = id ? SKILLS[id] : null;
     if (hudCache['skid' + i] !== (id || '')) {
@@ -3186,14 +3283,16 @@ function updateHud() {
       $('tbS' + i).textContent = S ? S.name : `${SLOT_KEYS[i]}（空）`;
     }
     const cdv = (S && p.cds[id] > 0 ? Math.min(1, p.cds[id] / S.cd) : 0).toFixed(3);
-    if (hudCache['cd' + i] !== cdv) { hudCache['cd' + i] = cdv; $('cdS' + i).style.setProperty('--p', cdv); }
-    setCls('slotS' + i, 'lack', !!S && (p.mp < S.mp(p.skills[id] || 1) || !skillUsable(p, id)));
+    if (hudCache['cd' + i] !== cdv) { hudCache['cd' + i] = cdv; $('cdS' + i).style.setProperty('--p', cdv); $('tbS' + i).style.setProperty('--p', cdv); }
+    const lack = !!S && (p.mp < S.mp(p.skills[id] || 1) || !skillUsable(p, id));
+    setCls('slotS' + i, 'lack', lack); setCls('tbS' + i, 'lack', lack);
   }
   setCls('mbSkill', 'dot', p.sp > 0 && Object.keys(SKILLS).some(id => !learnBlock(p, id)));
   setCls('mbQuest', 'dot', QUESTS.some(qReady));
   setCls('mbAcct', 'dot', !!CLOUD.pending);
   setCls('menuBtn', 'dot', hudCache.mbSkilldot || hudCache.mbQuestdot || !!CLOUD.pending);
   setCls('slotHp', 'lack', p.pots.hp <= 0); setCls('slotMp', 'lack', p.pots.mp <= 0);
+  setCls('tbHp', 'lack', p.pots.hp <= 0); setCls('tbMp', 'lack', p.pots.mp <= 0);
 }
 
 // ================= 版面配置 =================
@@ -3201,37 +3300,80 @@ let isTouch = false;
 function enableTouch() { if (isTouch) return; isTouch = true; document.body.classList.add('touch'); layout(); }
 function layout() {
   const W = document.documentElement.clientWidth || innerWidth, H = document.documentElement.clientHeight || innerHeight;
-  const land = isTouch && W > H && W >= 560;
-  const dpad = $('dpad'), acts = $('acts');
-  const tl = land ? $('sideL') : $('bottomCtl'), tr = land ? $('sideR') : $('bottomCtl');
-  if (dpad.parentNode !== tl) tl.appendChild(dpad);
-  if (acts.parentNode !== tr) tr.appendChild(acts);
-  $('sideL').style.display = $('sideR').style.display = land ? 'flex' : 'none';
+  const hud = $('hud'), st = $('stage'), ow = VIEW_W, oh = VIEW_H;
   $('rotHint').classList.toggle('show', isTouch && H > W && !G.rotSeen);   // 觸控裝置直向時，提示轉為橫向
-  $('bottomCtl').style.display = isTouch && !land ? 'flex' : 'none';
-  dpad.style.display = acts.style.display = isTouch ? 'grid' : 'none';
-  const sideW = land ? $('sideL').offsetWidth + $('sideR').offsetWidth : 0;
-  const availW = Math.max(200, Math.min(W - sideW, 1500));
-  const hud = $('hud'), ctl = $('bottomCtl');
-  hud.style.width = availW + 'px'; ctl.style.width = availW + 'px';
-  const ctlH = isTouch && !land ? ctl.offsetHeight : 0;
-  let availH = Math.max(120, H - hud.offsetHeight - ctlH);
-  const wide = availW / availH > 1.5, small = availW < 720;
-  const ow = VIEW_W, oh = VIEW_H;
-  VIEW_W = wide ? (small ? 640 : 960) : (small ? 560 : 800);
-  VIEW_H = wide ? VIEW_W * 9 / 16 : VIEW_W * 3 / 4;
-  let cw = availW, ch = cw * VIEW_H / VIEW_W;
-  if (ch > availH) { ch = availH; cw = ch * VIEW_W / VIEW_H; }
-  hud.style.width = Math.floor(cw) + 'px';
-  const availH2 = Math.max(120, H - hud.offsetHeight - ctlH);
-  if (ch > availH2) { ch = availH2; cw = ch * VIEW_W / VIEW_H; hud.style.width = Math.floor(cw) + 'px'; }
+  let cw, ch;
+  if (isTouch) {
+    // 觸控：HUD 在上方、遊戲區填滿其餘空間，搖桿與按鈕疊在遊戲區上（見 placeTouch）
+    readSafe();
+    hud.style.width = W + 'px';
+    const availH = Math.max(160, H - hud.offsetHeight);
+    cw = W; ch = availH;
+    if (W > H) {   // 橫向：畫面填滿，視野寬度依螢幕比例加寬（比例極端時才留黑邊）
+      VIEW_H = ch < 420 ? 360 : ch < 600 ? 450 : 540;
+      const a = clamp(cw / ch, 1.25, 3);
+      if (cw / ch > a) cw = ch * a; else ch = Math.min(ch, cw / a);
+      VIEW_W = Math.round(VIEW_H * a);
+      st.style.height = Math.floor(ch) + 'px';
+    } else {   // 直向：遊戲畫面在上，下方留給搖桿與按鈕（空間不夠時才疊到畫面上）
+      VIEW_W = W < 720 ? 560 : 800;
+      const u = clamp((W - TL.safe.l - TL.safe.r) * 0.55 / 3.6, 34, 62);
+      ch = clamp(availH - 4.45 * u - TL.safe.b, cw * 0.6, cw * 1.3);
+      VIEW_H = Math.round(clamp(VIEW_W * ch / cw, VIEW_W * 0.6, 740));
+      ch = cw * VIEW_H / VIEW_W;
+      st.style.height = Math.floor(Math.max(ch, availH)) + 'px';
+    }
+  } else {
+    st.style.height = '';
+    const availW = Math.max(200, Math.min(W, 1500));
+    hud.style.width = availW + 'px';
+    const availH = Math.max(120, H - hud.offsetHeight);
+    const wide = availW / availH > 1.5, small = availW < 720;
+    VIEW_W = wide ? (small ? 640 : 960) : (small ? 560 : 800);
+    VIEW_H = wide ? VIEW_W * 9 / 16 : VIEW_W * 3 / 4;
+    cw = availW; ch = cw * VIEW_H / VIEW_W;
+    if (ch > availH) { ch = availH; cw = ch * VIEW_W / VIEW_H; }
+    hud.style.width = Math.floor(cw) + 'px';
+    const availH2 = Math.max(120, H - hud.offsetHeight);
+    if (ch > availH2) { ch = availH2; cw = ch * VIEW_W / VIEW_H; hud.style.width = Math.floor(cw) + 'px'; }
+  }
   cw = Math.floor(cw); ch = Math.floor(ch);
   cv.style.width = cw + 'px'; cv.style.height = ch + 'px';
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
   SCALE = cv.width / VIEW_W;
+  if (isTouch) placeTouch(cw, st.offsetHeight || ch, Math.round((30 + Math.round(miniW() * 0.24)) * ch / VIEW_H));
   if (G.player && (ow !== VIEW_W || oh !== VIEW_H)) updateCamera(0, true);
 }
+// 觸控按鈕位置：以按鈕單位 u 計，[圓心 x, 圓心 y, 直徑]，相對右下角錨點；攻擊在右下角，跳躍在左邊，4 個技能沿弧形排列，藥水在最上方
+const TOUCH_BTNS = {
+  attack: [-0.9, -0.85, 1.5], jump: [-2.62, -0.32, 1.12],
+  sk1: [-2.89, -1.58, 0.88], sk2: [-2.29, -2.45, 0.88], sk3: [-1.34, -2.92, 0.88], sk4: [-0.28, -2.88, 0.88],
+  hp: [-1.93, -3.67, 0.72], mp: [-0.48, -3.82, 0.72],
+};
+function readSafe() {   // 讀取 env(safe-area-inset-*)（CSS px）
+  try { const cs = getComputedStyle($('safeProbe')), f = v => parseFloat(v) || 0; TL.safe = { t: f(cs.paddingTop), r: f(cs.paddingRight), b: f(cs.paddingBottom), l: f(cs.paddingLeft) }; } catch (e) {}
+}
+// 依遊戲區大小擺放觸控按鈕與搖桿區；top：右上角小地圖佔用的高度（按鈕不要蓋到）
+function placeTouch(w, h, top) {
+  const S = TL.safe, land = w > h;
+  const u = TL.u = Math.round(clamp(Math.min(land ? (h - top - S.b) / 4.45 : 99, (w - S.l - S.r) * (land ? 0.5 : 0.55) / 3.6), 34, 62));
+  TL.w = w; TL.h = h;
+  const ax = w - S.r - 0.25 * u, ay = h - S.b - 0.25 * u;
+  document.querySelectorAll('#tctl [data-act]').forEach(b => {
+    const [x, y, d] = TOUCH_BTNS[b.dataset.act], px = Math.round(d * u);
+    const st = b.style;
+    st.width = st.height = px + 'px';
+    st.left = Math.round(ax + x * u - px / 2) + 'px'; st.top = Math.round(ay + y * u - px / 2) + 'px';
+    st.fontSize = Math.max(10, Math.round(u * (d >= 1.4 ? 0.36 : d >= 1 ? 0.3 : 0.23))) + 'px';
+  });
+  const tb = $('topbtns'), jz = $('jz'), jt = tb ? tb.offsetTop + tb.offsetHeight + 4 : 40;
+  jz.style.top = jt + 'px'; jz.style.width = Math.round(w * 0.45) + 'px'; jz.style.height = Math.max(0, h - jt) + 'px';
+  JOY.r = Math.round(clamp(u * 0.95, 40, 58));
+  applyTouchAlpha();
+  joyDraw();
+}
+function applyTouchAlpha() { $('tctl').style.setProperty('--ta', SETTINGS.tAlpha.toFixed(2)); }
 
 // ================= 存檔 =================
 function saveState() {
@@ -3729,9 +3871,13 @@ const WIN = {
       <div class="st"><span>主音量</span><b id="volT">${v}%</b></div>
       <input type="range" class="rng" id="setVol" min="0" max="100" step="5" value="${v}" aria-label="主音量">
       <label class="setrow"><input type="checkbox" id="setMute" ${SETTINGS.mute ? 'checked' : ''}>靜音</label>
+      <div class="touchOnly"><div class="hd">觸控按鈕</div>
+        <div class="st"><span>按鈕不透明度</span><b id="taT">${Math.round(SETTINGS.tAlpha * 100)}%</b></div>
+        <input type="range" class="rng" id="setTA" min="10" max="80" step="5" value="${Math.round(SETTINGS.tAlpha * 100)}" aria-label="觸控按鈕不透明度">
+        <label class="setrow"><input type="checkbox" id="setRing" ${SETTINGS.joyRing ? 'checked' : ''}>顯示搖桿圈</label></div>
       <div class="hd">按鍵說明</div>
       <table class="keys keyOnly">${KEY_HELP.map(([k, t]) => `<tr><td>${k}</td><td>${t}</td></tr>`).join('')}</table>
-      <div class="d touchOnly">觸控操作：左側方向鍵移動／攀爬（▲ 也能和 NPC 對話），右側為攻擊、跳躍、4 個技能與紅／藍藥水；畫面左上角的「選單」開啟各視窗。建議橫向遊玩。</div>
+      <div class="d touchOnly">觸控操作：左半邊畫面按住滑動來移動／攀爬／趴下（往上滑抓繩索或和 NPC 對話，往下滑趴下或往下爬；按住下滑再按「跳躍」可從平台跳下）；右下角為攻擊、跳躍、4 個技能與紅／藍藥水；畫面左上角的「選單」開啟各視窗。建議橫向遊玩。</div>
       <div class="acts2"><button class="sb alt" data-do="help">開啟遊戲說明</button></div>`;
     return [h, '<span class="keyOnly">←→ 音量・Enter 切換暫停・M 靜音・Esc 關閉</span><span>設定只保存在這台裝置</span>'];
   },
@@ -3802,6 +3948,7 @@ function uiAction(act, a, b) {
     case 'skTab': G.ui.skTab = +a === 2 ? 2 : 1; G.ui.sel.skill = 0; SFX.click(); renderWin(true); return;
     case 'setPause': SETTINGS.pause = !SETTINGS.pause; saveSettings(); SFX.click(); break;
     case 'setMute': SETTINGS.mute = !SETTINGS.mute; saveSettings(); applyVolume(); updateMuteBtn(); SFX.click(); break;
+    case 'setRing': SETTINGS.joyRing = !SETTINGS.joyRing; saveSettings(); joyDraw(); SFX.click(); break;
     case 'help': closeWin(); openHint(); return;
   }
   renderWin();
@@ -3936,6 +4083,8 @@ function setupUI() {
     const t = e.target;
     if (t.id === 'setPause') { t.blur(); uiAction('setPause'); }
     else if (t.id === 'setMute') { t.blur(); uiAction('setMute'); }
+    else if (t.id === 'setRing') { t.blur(); uiAction('setRing'); }
+    else if (t.id === 'setTA') { saveSettings(); t.blur(); }
     else if (t.id === 'setVol') { saveSettings(); t.blur(); SFX.coin(); }   // 放開滑桿時播放試聽音效
   });
   $('respawnBtn').addEventListener('click', respawn);
@@ -3954,6 +4103,7 @@ function setupUI() {
     if (e.target.id === 'acUser') CLOUD.form.user = e.target.value;
     else if (e.target.id === 'acPass') CLOUD.form.pass = e.target.value;
     else if (e.target.id === 'setVol') { SETTINGS.vol = clamp(+e.target.value / 100, 0, 1); applyVolume(); const v = $('volT'); if (v) v.textContent = Math.round(SETTINGS.vol * 100) + '%'; }
+    else if (e.target.id === 'setTA') { SETTINGS.tAlpha = clamp(+e.target.value / 100, 0.1, 0.8); applyTouchAlpha(); const v = $('taT'); if (v) v.textContent = Math.round(SETTINGS.tAlpha * 100) + '%'; }
   });
   $('win').addEventListener('submit', e => { e.preventDefault(); if (e.target.id === 'acctForm') cloudAuth('login'); });
   $('dlg').addEventListener('click', e => {
@@ -3968,12 +4118,7 @@ function setupUI() {
     initAudio();
     const p = G.player;
     if (G.hint || uiBusy() || G.deathShown || !p || p.dead) return;
-    const r = cv.getBoundingClientRect();
-    const wx = (e.clientX - r.left) / r.width * VIEW_W + G.cam.x, wy = (e.clientY - r.top) / r.height * VIEW_H + G.cam.y;
-    const n = NPCS.find(n => Math.abs(wx - n.x) < 26 && wy > GROUND_Y - 90 && wy < GROUND_Y + 22);
-    if (!n) return;
-    if (Math.abs(p.x - n.x) > 170 || p.y < GROUND_Y - 4) { toast(`請走近「${n.name}」再對話`, '#d8cfb4'); return; }
-    talkTo(n);
+    npcTap(e, false);
   });
   updateMuteBtn();
   setupTouch();
