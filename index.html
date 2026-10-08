@@ -858,7 +858,7 @@ const G = {
   hazards: [],   // Boss 的攻擊判定（震波、霧彈）
   cam: { x: 0, y: 0 }, shake: 0, time: 0, lvlFx: 0, banner: null, intro: 0, area: '', areaT: 0,
   hint: true, deathShown: false, saveT: 0, started: false, savedAt: 0, winT: 0, winSig: '',
-  ui: { win: null, dlg: null, sel: { skill: 0, bag: 0, equip: 0, quest: 0, shop: 0 }, shopTab: 'buy', skTab: 1, confirm: null },
+  ui: { win: null, dlg: null, sel: { skill: 0, bag: 0, equip: 0, eqc: -1, quest: 0, shop: 0 }, shopTab: 'buy', skTab: 1, confirm: null },
 };
 // 重設地圖上的動態物件（讀取雲端存檔、重置進度時使用）
 function resetWorld() { G.drops = []; G.projs = []; G.fxs = []; G.timers = []; G.hazards = []; G.monsters = SPAWNS.map(makeMonster); }
@@ -4230,6 +4230,14 @@ function skillList(p, tab = 1) {
   return out;
 }
 function skillDepth(id) { let d = 0, S = SKILLS[id]; while (S.req) { d++; S = SKILLS[Object.keys(S.req)[0]]; } return d; }
+function statDiff(it, cmp) {   // 與目前裝備的數值差異摘要（裝備視窗的替換清單用）
+  const out = [];
+  for (const k of STAT_ORDER) {
+    const d = (it.st[k] || 0) - (cmp ? cmp.st[k] || 0 : 0);
+    if (d) out.push(`${STAT_NAMES[k]} <span class="${d > 0 ? 'up' : 'dn'}">${d > 0 ? '▲' : '▼'}${fmtStat(k, Math.abs(d)).slice(1)}</span>`);
+  }
+  return out.length ? out.join('　') : '<span class="dim">數值相同</span>';
+}
 function itemDetail(it, cmp) {
   const p = G.player, B = ITEMS[it.b], R = RARITY[it.r];
   const lvOk = p.lv >= B.lv, jobOk = jobFits(p.job, B.jobs);
@@ -4303,13 +4311,27 @@ const WIN = {
       return `<button class="cell ${i === sel ? 'sel' : ''}" ${it && it.r ? `style="border-color:${RARITY[it.r].color}"` : ''} data-do="sel" data-a="${i}">${it ? `<img src="${itemIcon(it.b).url}" alt="${esc(itemName(it))}" style="width:66%;height:66%;margin-bottom:9px">` : ''}<span class="lb">${SLOTS[k]}</span></button>`;
     }).join('') + '</div>';
     const slot = SLOT_ORDER[sel], it = p.equip[slot];
-    h += it ? `<div class="det">${itemDetail(it)}<div class="acts2"><button class="sb alt" data-do="unequip" data-a="${slot}">卸下</button></div></div>`
-            : `<div class="det dim">${SLOTS[slot]}欄位尚未裝備。打倒怪物或在商店購買裝備後，到背包（I）點選「穿上」。</div>`;
+    const cands = p.bag.map((b, i) => [b, i]).filter(([b]) => ITEMS[b.b].slot === slot);
+    const ci = G.ui.sel.eqc = clamp(G.ui.sel.eqc, -1, cands.length - 1);
+    if (ci >= 0) {   // 選了背包中的候選裝備：顯示它與目前裝備的比較
+      const [c, bi] = cands[ci], why = equipBlock(p, c);
+      h += `<div class="det">${itemDetail(c, it || null)}${why ? `<div class="d bad">無法裝備：${why}</div>` : ''}<div class="acts2"><button class="sb" data-do="equip" data-a="${bi}" ${why ? 'disabled' : ''}>換上</button><button class="sb alt" data-do="eqc" data-a="-1">看目前裝備</button></div></div>`;
+    } else h += it ? `<div class="det">${itemDetail(it)}<div class="acts2"><button class="sb alt" data-do="unequip" data-a="${slot}">卸下</button></div></div>`
+            : `<div class="det dim">${SLOTS[slot]}欄位尚未裝備。打倒怪物或在商店購買裝備後，到背包（I）點選「穿上」，或從下方清單直接換上。</div>`;
+    h += `<div class="hd">背包中的${SLOTS[slot]}（${cands.length}）</div>`;
+    if (!cands.length) h += `<div class="d dim" style="margin-bottom:6px">背包裡沒有其他${SLOTS[slot]}。</div>`;
+    cands.forEach(([c, bi], j) => {
+      const why = equipBlock(p, c);
+      h += `<div class="row ${j === ci ? 'sel' : ''}" data-do="eqc" data-a="${j}"><img src="${itemIcon(c.b).url}" alt="" style="width:30px;height:30px;flex:none">
+        <div class="grow"><div class="t" style="color:${RARITY[c.r].color}">${esc(itemName(c))} <span class="dim" style="font-weight:600;font-size:12px">Lv.${ITEMS[c.b].lv}</span></div>
+        <div class="d">${statDiff(c, it || null)}${why ? ` <span class="bad">（${why}）</span>` : ''}</div></div>
+        <button class="sb" data-do="equip" data-a="${bi}" ${why ? 'disabled' : ''}>換上</button></div>`;
+    });
     const rows = [['職業', JOBS[p.job].name], ['等級', 'Lv.' + p.lv], ['HP', p.maxHp], ['MP', p.maxMp], ['攻擊', p.atk], ['防禦', p.def], ['爆擊率', Math.round(p.crit * 100) + '%'], ['移動速度', Math.round(p.spd * 100) + '%'], ['累計擊殺', p.stats.kills.toLocaleString()], ['Boss 擊殺', p.stats.bossKills.toLocaleString()], ['金幣', p.coins.toLocaleString()]];
     h += '<div class="sgrid">' + rows.map(([a, b]) => `<div class="st"><span class="dim">${a}</span><b>${b}</b></div>`).join('') + '</div>';
     const bs = Object.keys(p.buffs);
     if (bs.length) h += `<div class="d ok" style="margin-top:4px">增益中：${bs.map(id => SKILLS[id].name).join('、')}</div>`;
-    return [h, '<span class="keyOnly">←→ 選擇欄位・Enter 卸下</span>'];
+    return [h, '<span class="keyOnly">←→ 選欄位・↑↓ 選替換裝備・Enter 換上／卸下</span>'];
   },
   quest() {
     const p = G.player, act = QUESTS.filter(qActive), av = QUESTS.filter(qAvail), done = QUESTS.filter(qDone);
@@ -4529,10 +4551,11 @@ function uiAction(act, a, b) {
     case 'close': closeWin(); return;
     case 'tab': G.ui.win = a; SFX.click(); renderWin(true); return;
     case 'stab': G.ui.shopTab = a; G.ui.sel.shop = 0; SFX.click(); renderWin(true); return;
-    case 'sel': G.ui.sel[G.ui.win] = +a; G.ui.confirm = null; break;
+    case 'sel': G.ui.sel[G.ui.win] = +a; G.ui.confirm = null; if (G.ui.win === 'equip') G.ui.sel.eqc = -1; break;
+    case 'eqc': G.ui.sel.eqc = +a; break;
     case 'learn': learnSkill(a); break;
     case 'bind': bindSkill(a, +b); break;
-    case 'equip': equipItem(+a); break;
+    case 'equip': { const it0 = p.bag[+a]; equipItem(+a); if (G.ui.win === 'equip' && p.bag[+a] !== it0) G.ui.sel.eqc = -1; break; }
     case 'unequip': unequip(a); break;
     case 'drop': if (G.ui.confirm === 'drop' + a) { discardItem(+a); G.ui.confirm = null; } else { G.ui.confirm = 'drop' + a; SFX.click(); } break;
     case 'sell': {
@@ -4595,8 +4618,13 @@ function winKey(e) {
     if (enter) { uiAction('equip', String(G.ui.sel.bag)); return true; }
     if (c === 'Delete' || c === 'Backspace') { uiAction('drop', String(G.ui.sel.bag)); return true; }
   } else if (w === 'equip') {
-    if (nav) { G.ui.sel.equip = clamp(G.ui.sel.equip + nav, 0, SLOT_ORDER.length - 1); renderWin(); return true; }
-    if (enter) { uiAction('unequip', SLOT_ORDER[G.ui.sel.equip]); return true; }
+    if (nav && !vert) { G.ui.sel.equip = clamp(G.ui.sel.equip + nav, 0, SLOT_ORDER.length - 1); G.ui.sel.eqc = -1; renderWin(); return true; }
+    if (vert) { G.ui.sel.eqc += nav; renderWin(); return true; }   // 超出範圍由 WIN.equip 夾住
+    if (enter) {
+      const slot = SLOT_ORDER[G.ui.sel.equip], cands = p.bag.map((b, i) => i).filter(i => ITEMS[p.bag[i].b].slot === slot);
+      if (G.ui.sel.eqc >= 0 && cands[G.ui.sel.eqc] !== undefined) uiAction('equip', String(cands[G.ui.sel.eqc])); else uiAction('unequip', slot);
+      return true;
+    }
   } else if (w === 'quest') {
     if (vert) { G.ui.sel.quest += nav; renderWin(); return true; }
     if (enter) { const Q = QUESTS.filter(qActive)[G.ui.sel.quest]; if (Q) uiAction('track', Q.id); return true; }
