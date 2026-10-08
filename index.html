@@ -180,6 +180,40 @@ body.touch .menus{display:none}
 #resetBox{display:none;margin-top:6px;padding:8px;border-radius:8px;border:1px solid #8a3b3b;background:rgba(138,59,59,.18)}
 #resetBox.show{display:block}
 #resetBox .note{color:#ffd2c8}
+/* 第五階段：多人同步（聊天列、角色資訊卡、社群視窗） */
+.chatbar{position:absolute;left:6px;bottom:6px;z-index:7;width:min(470px,calc(100% - 12px));display:none;flex-direction:column;gap:5px;background:rgba(22,32,27,.94);border:1.5px solid #6f917b;border-radius:9px;padding:6px;line-height:1.2;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.chatbar.show{display:flex}
+body.touch .chatbar{left:calc(6px + env(safe-area-inset-left));bottom:calc(6px + env(safe-area-inset-bottom))}
+.cbrow{display:flex;gap:5px;align-items:center}
+.chatbar .inp{margin:0;flex:1;min-width:0;font-size:15px;padding:6px 8px}
+.chatbar .inp:disabled{opacity:.7}
+.chatbar .xbtn{margin:0;height:32px}
+.emos{display:flex;gap:5px;flex-wrap:wrap}
+.emb{width:34px;height:34px;padding:2px;border-radius:8px;border:1px solid #5d7e69;background:#1a241f;cursor:pointer;flex:none}
+.emb:hover{background:#2c3d33}
+.emb img{width:100%;height:100%;display:block;pointer-events:none}
+.cbmsg{font-size:11.5px;color:#9fbfae}
+.cbmsg:empty{display:none}
+.cbmsg.bad{color:#ff8a7e}
+.pcard{position:absolute;top:44px;left:50%;transform:translateX(-50%);z-index:6;width:min(270px,calc(100% - 16px));display:none;background:rgba(22,32,27,.96);border:2px solid #6ab8ff;border-radius:10px;padding:8px 10px;line-height:1.4;font-size:13px;text-align:left;color:#f1ead8;box-shadow:0 8px 30px rgba(0,0,0,.55)}
+.pcard.show{display:block}
+.pcard .ph{display:flex;align-items:center;gap:6px}
+.pcard .nm{font-weight:900;font-size:15px;color:#d8ecff;flex:1;min-width:0;overflow-wrap:anywhere}
+.pcard .xbtn{margin:0}
+.pcard .sub{color:#bfd3c4;font-size:12px;margin:2px 0 6px}
+.chgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.chb{font:inherit;font-weight:900;font-size:14px;padding:5px 2px;border-radius:7px;border:1px solid #6f917b;background:#1d2a23;color:#f1ead8;cursor:pointer;line-height:1.15}
+.chb small{display:block;font-size:10px;color:#9fbfae;font-weight:700}
+.chb.on{background:#e6a93a;color:#2b1d07;border-color:#ffe08a}
+.chb.on small{color:#4a3208}
+.chb:disabled{opacity:.45;cursor:default}
+.clog{max-height:170px;overflow:auto;background:rgba(0,0,0,.25);border:1px solid #3b5446;border-radius:8px;padding:5px 7px;font-size:12.5px;-webkit-user-select:text;user-select:text}
+.clog div{padding:1px 0;overflow-wrap:anywhere}
+.clog b{color:#ffe08a;margin-right:4px}
+.clog .me b{color:#9ff0c8}
+.clog .sys{color:#9fbfae}
+.clog .old{opacity:.75}
+.tb.tbc{background:rgba(40,62,96,var(--ta))}
 </style>
 
 <div id="app">
@@ -191,10 +225,17 @@ body.touch .menus{display:none}
         <button class="tb tbs" data-act="sk1" id="tbS0">X</button><button class="tb tbs" data-act="sk2" id="tbS1">A</button><button class="tb tbs" data-act="sk3" id="tbS2">S</button><button class="tb tbs" data-act="sk4" id="tbS3">D</button>
         <button class="tb pt" data-act="hp" id="tbHp">紅藥</button><button class="tb pt" data-act="mp" id="tbMp">藍藥</button>
         <button class="tb big" data-act="jump">跳躍</button><button class="tb big" data-act="attack">攻擊</button>
+        <button class="tb tbc" data-ui="chat" id="tbChat">聊天</button>
       </div>
       <div id="topbtns"><button class="mini-btn" id="helpBtn">說明</button><button class="mini-btn" id="muteBtn">音效：開</button><button class="mini-btn" id="menuBtn">選單</button></div>
       <div id="win" class="win" role="dialog" aria-label="遊戲選單"></div>
       <div id="dlg" class="dlg" role="dialog" aria-label="NPC 對話"></div>
+      <div id="pcard" class="pcard" role="dialog" aria-label="玩家資訊"></div>
+      <div id="chatBar" class="chatbar" role="dialog" aria-label="聊天">
+        <div class="cbrow"><input class="inp" id="chatIn" maxlength="60" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" aria-label="聊天訊息"><button class="sb" id="chatSend">送出</button><button class="xbtn" id="chatX" aria-label="關閉聊天">✕</button></div>
+        <div class="emos" id="emoRow"></div>
+        <div class="cbmsg" id="chatMsg"></div>
+      </div>
     </div>
     <div id="hud">
       <div id="hudRow">
@@ -218,6 +259,7 @@ body.touch .menus{display:none}
           <button class="mbtn" data-win="equip" id="mbEquip">裝備<small>E</small></button>
           <button class="mbtn" data-win="quest" id="mbQuest">任務<small>Q</small></button>
           <button class="mbtn" data-win="account" id="mbAcct">帳號<small>L</small></button>
+          <button class="mbtn" data-win="social" id="mbSocial">社群<small>C</small></button>
         </div>
       </div>
       <div id="expbar"><i id="expF"></i><span id="expT">EXP 0 / 15（0.00%）</span></div>
@@ -231,7 +273,7 @@ body.touch .menus{display:none}
 
 <div id="hint" class="ov show"><div class="card">
   <h1>晨霧森林</h1>
-  <p class="sub">原創 2D 橫向捲軸動作 RPG・第四階段原型</p>
+  <p class="sub">原創 2D 橫向捲軸動作 RPG・第五階段原型（多人同步）</p>
   <table class="keys keyOnly">
     <tr><td>← →</td><td>移動</td></tr>
     <tr><td>↑ ↓</td><td>攀爬繩索（附近沒有繩索時，按 ↓ 趴下）</td></tr>
@@ -242,12 +284,16 @@ body.touch .menus{display:none}
     <tr><td>↑ / Enter</td><td>靠近 NPC 時對話（也可直接點擊 NPC）</td></tr>
     <tr><td>K / I / E / Q</td><td>技能 / 背包 / 裝備 / 任務視窗（Esc 關閉）</td></tr>
     <tr><td>L / R</td><td>帳號（雲端存檔）/ 排行榜</td></tr>
-    <tr><td>O / Esc</td><td>設定（音量、開視窗是否暫停、按鍵說明）</td></tr>
+    <tr><td>O / Esc</td><td>設定（音量、開視窗是否暫停、顯示其他玩家／聊天泡泡、按鍵說明）</td></tr>
+    <tr><td>T</td><td>聊天（Enter 送出、Esc 取消；需登入）</td></tr>
+    <tr><td>3～8</td><td>表情動作（開心／愛心／哭哭／生氣／驚訝／音符）</td></tr>
+    <tr><td>C</td><td>社群：切換頻道、同頻道玩家、聊天紀錄（點擊其他玩家可查看角色資訊）</td></tr>
   </table>
-  <div class="touchOnly note"><b>左半邊畫面按住滑動來移動／攀爬／趴下</b>：左右滑移動；往上滑抓住繩索往上爬（靠近 NPC 時往上滑可對話）；往下滑往下爬，沒有繩索時趴下；斜上方滑可邊走邊抓繩索。按住下滑再按「跳躍」可從平台跳下。右下角為攻擊、跳躍、4 個技能與紅／藍藥水；也可直接點擊 NPC 對話。畫面左上角的「選單」可開啟技能、背包、裝備、任務、帳號、排行榜與設定（可調整按鈕透明度）。建議橫向遊玩。</div>
+  <div class="touchOnly note"><b>左半邊畫面按住滑動來移動／攀爬／趴下</b>：左右滑移動；往上滑抓住繩索往上爬（靠近 NPC 時往上滑可對話）；往下滑往下爬，沒有繩索時趴下；斜上方滑可邊走邊抓繩索。按住下滑再按「跳躍」可從平台跳下。右下角為攻擊、跳躍、4 個技能與紅／藍藥水；也可直接點擊 NPC 對話；「聊天」按鈕可以聊天與使用表情，點一下其他玩家可查看角色資訊。畫面左上角的「選單」可開啟技能、背包、裝備、任務、帳號、排行榜、社群與設定（可調整按鈕透明度）。建議橫向遊玩。</div>
   <p class="note">怪物掉落的金幣、藥水與裝備，<b>碰觸即自動拾取</b>。Lv.10 可找村口的雷歐轉職，Lv.30 可再接受二轉試煉。森林最深處的「霧谷遺跡」盡頭有強大的 Boss「霧之守衛」。</p>
   <p class="note">開啟視窗時遊戲<b>不會暫停</b>（怪物仍會攻擊）；可在設定（O）中改成開視窗時暫停。</p>
   <p class="note">在「帳號」視窗註冊／登入後，進度會自動備份到雲端，並可參加等級、擊殺數、金幣、Boss 排行榜。不登入也能正常遊玩（進度存在這台裝置）。</p>
+  <p class="note"><b>多人同步</b>：登入後會自動進入頻道（每個頻道最多 20 人），可以看到同頻道的其他玩家、聊天和使用表情。沒登入也能觀看其他玩家，但別人看不到你。</p>
   <button class="btn" id="startBtn">開始冒險</button>
   <p class="tip keyOnly">按任意鍵或點擊開始</p>
   <div><button class="link" id="resetBtn">重置進度</button></div>
@@ -269,13 +315,16 @@ body.touch .menus{display:none}
 // 1. 把 PA_USERNAME 改成你的 PythonAnywhere 帳號名稱（例如 'peoplepop'）
 // 2. EU 區帳號請把 PA_DOMAIN 改成 'eu.pythonanywhere.com'
 // 在 localhost / 127.0.0.1 開啟時，會自動改用本機後端 http://127.0.0.1:5000
+// （本機開發時可在網址加上 ?api=http://127.0.0.1:5055 改用其他埠號；只接受本機網址，正式網站不受影響）
 const PA_USERNAME = 'peoplepop';
 const PA_DOMAIN = 'pythonanywhere.com';
 const API_LOCAL = 'http://127.0.0.1:5000';
 function apiConfig(host) {
   const local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
   const named = PA_USERNAME !== 'YOUR_PA_USERNAME' && /^[A-Za-z0-9_-]+$/.test(PA_USERNAME);
-  return { base: local ? API_LOCAL : `https://${PA_USERNAME}.${PA_DOMAIN}`, ready: local || named };
+  let base = local ? API_LOCAL : `https://${PA_USERNAME}.${PA_DOMAIN}`;
+  if (local) { try { const q = new URLSearchParams(location.search).get('api'); if (q && /^http:\/\/(localhost|127\.0\.0\.1)(:\d{1,5})?$/.test(q)) base = q; } catch (e) {} }
+  return { base, ready: local || named };
 }
 const API = apiConfig(location.hostname);   // API.ready = false 時雲端功能停用，只用本機存檔
 const API_BASE = API.base;
@@ -583,7 +632,7 @@ let VIEW_W = 960, VIEW_H = 540, SCALE = 1;
 
 // ================= 設定（獨立的 localStorage 鍵值，與存檔分開） =================
 const SET_KEY = 'mistwood_settings';
-const SETTINGS = { pause: false, vol: 0.8, mute: false, tAlpha: 0.3, joyRing: true };   // pause：開視窗時暫停遊戲（預設關閉，和楓之谷一樣）；tAlpha／joyRing：觸控按鈕底色不透明度、是否顯示搖桿圈
+const SETTINGS = { pause: false, vol: 0.8, mute: false, tAlpha: 0.3, joyRing: true, others: true, bubbles: true };   // pause：開視窗時暫停遊戲（預設關閉，和楓之谷一樣）；tAlpha／joyRing：觸控按鈕底色不透明度、是否顯示搖桿圈；others／bubbles：顯示其他玩家／聊天泡泡
 try {
   const o = JSON.parse(localStorage.getItem(SET_KEY) || 'null');
   if (o && typeof o === 'object') {
@@ -591,6 +640,7 @@ try {
     if (typeof o.vol === 'number' && isFinite(o.vol)) SETTINGS.vol = Math.min(1, Math.max(0, o.vol));
     if (typeof o.tAlpha === 'number' && isFinite(o.tAlpha)) SETTINGS.tAlpha = Math.min(0.8, Math.max(0.1, o.tAlpha));
     SETTINGS.joyRing = o.joyRing !== false;
+    SETTINGS.others = o.others !== false; SETTINGS.bubbles = o.bubbles !== false;
   } else SETTINGS.mute = (localStorage.getItem(SAVE_KEY + '_mute') ?? localStorage.getItem(OLD_SAVE_KEY + '_mute')) === '1';   // 沿用舊的靜音設定
 } catch (e) {}
 function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(SETTINGS)); } catch (e) {} }
@@ -648,6 +698,7 @@ const SFX = {
   quest: () => [659, 784, 988, 1319].forEach((f, i) => tone(f, 0.14, 'square', 0.03, null, i * 0.08)),
   equip: () => { tone(520, 0.06, 'square', 0.03, 780); tone(980, 0.05, 'triangle', 0.025, null, 0.05); },
   click: () => tone(720, 0.03, 'triangle', 0.02),
+  chat: () => tone(1180, 0.05, 'sine', 0.018, 1480),
   talk: () => tone(560, 0.05, 'triangle', 0.025, 700),
   pickup: () => { tone(660, 0.05, 'triangle', 0.03, 990); tone(1320, 0.07, 'triangle', 0.022, null, 0.05); },
   // 第四階段：二轉技能、Boss
@@ -672,7 +723,7 @@ const KEYMAP = {
   KeyX: 'sk1', KeyA: 'sk2', KeyS: 'sk3', KeyD: 'sk4',
   Digit1: 'hp', Digit2: 'mp', Numpad1: 'hp', Numpad2: 'mp',
 };
-const MENU_KEYS = { KeyK: 'skill', KeyI: 'bag', KeyE: 'equip', KeyQ: 'quest', KeyL: 'account', KeyR: 'rank', KeyO: 'settings' };
+const MENU_KEYS = { KeyK: 'skill', KeyI: 'bag', KeyE: 'equip', KeyQ: 'quest', KeyL: 'account', KeyR: 'rank', KeyO: 'settings', KeyC: 'social' };
 function setAction(a, on) { if (on && !held[a]) pressed[a] = true; held[a] = on; }
 function releaseAll() {
   for (const k in held) held[k] = false; for (const k in pressed) pressed[k] = false; document.querySelectorAll('.tb.on').forEach(b => b.classList.remove('on'));
@@ -689,11 +740,15 @@ addEventListener('keydown', e => {
   initAudio();
   if (G.hint) { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); closeHint(); } return; }
   if (G.deathShown) { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); respawn(); } return; }
+  if (e.code === 'Escape' && NET.card) { e.preventDefault(); NET.card = 0; renderCard(); return; }   // 先關閉玩家資訊卡
+  if (e.code === 'Escape' && NET.chatOpen) { e.preventDefault(); closeChat(); return; }
   if (G.ui.dlg) { if (dlgKey(e)) e.preventDefault(); return; }
   if (G.ui.win) { if (winKey(e)) e.preventDefault(); return; }
   if (MENU_KEYS[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); if (!e.repeat) openWin(MENU_KEYS[e.code]); return; }
   if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) openWin('settings'); return; }   // 沒有開視窗時 Esc 開啟設定
   if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); if (!e.repeat) tryTalk(); return; }
+  if (e.code === 'KeyT' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); if (!e.repeat) openChat(); return; }   // 聊天（Enter 已用於和 NPC 對話）
+  if (EMOTE_KEYS[e.code] !== undefined) { e.preventDefault(); if (!e.repeat) doEmote(EMOTE_KEYS[e.code]); return; }
   const a = KEYMAP[e.code];
   if (a) { e.preventDefault(); setAction(a, true); }
 });
@@ -701,6 +756,7 @@ addEventListener('keyup', e => { if (isTyping(e.target)) return; const a = KEYMA
 addEventListener('blur', releaseAll);
 function setupTouch() {
   // 右下角的動作按鈕：每顆按鈕各自追蹤自己的 pointer，可和搖桿同時操作（多指）
+  $('tbChat').addEventListener('click', e => { e.preventDefault(); initAudio(); if (NET.chatOpen) closeChat(); else openChat(); });
   document.querySelectorAll('#tctl [data-act]').forEach(b => {
     const a = b.dataset.act;
     b.addEventListener('pointerdown', e => {
@@ -722,7 +778,7 @@ function setupTouch() {
 
 // ---- 觸控搖桿：在畫面左側按下的位置當作原點（浮動搖桿），滑動方向對應 ←→↑↓，與鍵盤共用 held／pressed ----
 const JOY_DEAD = 14;   // 死區（CSS px）：手指離原點超過這個距離才算按下方向
-const JOY = { id: null, ox: 0, oy: 0, x: 0, y: 0, rx: 0, ry: 0, r: 50, dir: { left: false, right: false, up: false, down: false } };
+const JOY = { id: null, ox: 0, oy: 0, x: 0, y: 0, rx: 0, ry: 0, r: 50, t0: 0, sx: 0, sy: 0, dir: { left: false, right: false, up: false, down: false } };
 const TL = { u: 50, w: 0, h: 0, safe: { t: 0, r: 0, b: 0, l: 0 } };   // 觸控版面：按鈕單位尺寸 u、遊戲區大小、安全區域（瀏海／圓角）
 // 點擊 NPC：走得夠近就對話並回傳 true；quiet 時（搖桿區）點到太遠的 NPC 不提示，直接當作移動
 function npcTap(e, quiet) {
@@ -743,7 +799,7 @@ function joyDown(e) {
   if (!uiBusy() && npcTap(e, true)) return;
   if (G.ui.dlg || paused()) return;   // 開著視窗（且沒有暫停）時仍可移動，和以前的觸控方向鍵一樣
   const r = $('stage').getBoundingClientRect(), jz = $('jz');
-  JOY.id = e.pointerId; JOY.rx = r.left; JOY.ry = r.top;
+  JOY.id = e.pointerId; JOY.rx = r.left; JOY.ry = r.top; JOY.t0 = performance.now(); JOY.sx = e.clientX; JOY.sy = e.clientY;
   JOY.ox = JOY.x = e.clientX - r.left; JOY.oy = JOY.y = e.clientY - r.top;
   try { jz.setPointerCapture(e.pointerId); } catch (err) {}
   joyDraw();
@@ -776,6 +832,8 @@ function joyEnd(e) {
   const id = JOY.id;
   for (const a in JOY.dir) joySet(a, false);
   JOY.id = null;
+  // 沒有滑動的短按：當作點擊（例如點其他玩家查看資訊）
+  if (e && e.type === 'pointerup' && performance.now() - JOY.t0 < 300 && Math.hypot(e.clientX - JOY.sx, e.clientY - JOY.sy) < 12 && !uiBusy()) playerTap(e);
   try { const jz = $('jz'); if (jz.hasPointerCapture(id)) jz.releasePointerCapture(id); } catch (err) {}
   joyDraw();
 }
@@ -1919,6 +1977,7 @@ function update(dt) {
     if (due.length) { G.timers = G.timers.filter(t => t.t > 0); due.forEach(t => t.fn()); }
   }
   updatePlayer(dt);
+  netTrack(G.player);
   if (paused()) return;   // 設定為「開視窗時暫停」時，對話開啟的那一刻停止推進
   for (const m of G.monsters) updateMonster(m, dt);
   updateHazards(dt);
@@ -2386,9 +2445,9 @@ function drawPlayer() {
   }
   ctx.save();
   ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'center';
-  const nw = ctx.measureText(PLAYER_NAME).width + 10;
+  const name = myName(), nw = ctx.measureText(name).width + 10;   // 登入後顯示帳號名稱（和別人看到的一樣）
   ctx.fillStyle = 'rgba(20,28,24,.7)'; ctx.beginPath(); rr(p.x - nw / 2, p.y + 4, nw, 15, 4); ctx.fill();
-  ctx.fillStyle = '#fff6d8'; ctx.fillText(PLAYER_NAME, p.x, p.y + 15.5);
+  ctx.fillStyle = '#fff6d8'; ctx.fillText(name, p.x, p.y + 15.5);
   ctx.restore();
 }
 
@@ -2894,7 +2953,7 @@ function drawMinimap() {
 }
 function drawToasts() {
   ctx.save(); ctx.font = `700 13px ${FONT}`; ctx.textAlign = 'left';
-  let y = VIEW_H - 12;
+  let y = VIEW_H - 12 - NET.logH;   // 有聊天紀錄時往上移
   const sl = safeV('l');
   for (let i = G.toasts.length - 1; i >= 0; i--) {
     const t = G.toasts[i], a = t.t > 2.4 ? 1 - (t.t - 2.4) / 0.6 : Math.min(1, t.t * 8);
@@ -2954,6 +3013,7 @@ function itemIcon(key) {
   return (ICONS[key] = { cv: c, url });
 }
 function paintIcon(key) {
+  if (key.startsWith('emo:')) { ctx.translate(16, 16); emoteShape(+key.slice(4), 12.5); return; }   // 表情按鈕
   if (key.startsWith('pot:')) {
     shape(key === 'pot:hp' ? '#e5484d' : '#3d7ff0', () => rr(8, 12, 16, 16, 6), 2);
     shape('#c9a46a', () => rr(12, 5, 8, 7, 2), 2);
@@ -3240,11 +3300,13 @@ function render() {
   for (const m of G.monsters) if (m.d.boss) drawBossTele(m);
   for (const m of G.monsters) drawMonster(m);
   drawLevelFx();
+  drawRemotes();
   drawPlayer();
   drawProjs();
   drawHazards();
   drawFxs();
   drawParts();
+  drawSocialFx();
   drawTexts();
   ctx.restore();
   if (!reduceMotion) {
@@ -3252,8 +3314,10 @@ function render() {
     for (let i = 0; i < 3; i++) { const x = ((G.time * (12 + i * 6) - cx * 0.9 + i * 600) % (VIEW_W + 600) + VIEW_W + 600) % (VIEW_W + 600) - 300; ctx.beginPath(); ctx.ellipse(x, VIEW_H - 30 - i * 40, 260, 26, 0, 0, Math.PI * 2); ctx.fill(); }
   }
   drawMinimap();
+  drawNetHud();
   drawBossBar();
   drawTracker();
+  drawChatLog();
   drawToasts();
   drawBanners();
 }
@@ -3351,7 +3415,7 @@ function layout() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
   SCALE = cv.width / VIEW_W;
-  if (isTouch) placeTouch(cw, st.offsetHeight || ch, Math.round((30 + Math.round(miniW() * 0.24)) * ch / VIEW_H));
+  if (isTouch) placeTouch(cw, st.offsetHeight || ch, Math.round((30 + Math.round(miniW() * 0.24) + (API.ready ? 26 : 0)) * ch / VIEW_H));   // 小地圖＋下方的頻道資訊
   if (G.player && (ow !== VIEW_W || oh !== VIEW_H)) updateCamera(0, true);
 }
 // 觸控按鈕位置：以按鈕單位 u 計，[圓心 x, 圓心 y, 直徑]，相對右下角錨點；攻擊在右下角，跳躍在左邊，4 個技能沿弧形排列，藥水在最上方
@@ -3359,6 +3423,7 @@ const TOUCH_BTNS = {
   attack: [-0.9, -0.85, 1.5], jump: [-2.62, -0.32, 1.12],
   sk1: [-2.89, -1.58, 0.88], sk2: [-2.29, -2.45, 0.88], sk3: [-1.34, -2.92, 0.88], sk4: [-0.28, -2.88, 0.88],
   hp: [-1.93, -3.67, 0.72], mp: [-0.48, -3.82, 0.72],
+  chat: [-3.3, -3.32, 0.72],   // 聊天（data-ui）
 };
 function readSafe() {   // 讀取 env(safe-area-inset-*)（CSS px）
   try { const cs = getComputedStyle($('safeProbe')), f = v => parseFloat(v) || 0; TL.safe = { t: f(cs.paddingTop), r: f(cs.paddingRight), b: f(cs.paddingBottom), l: f(cs.paddingLeft) }; } catch (e) {}
@@ -3369,8 +3434,8 @@ function placeTouch(w, h, top) {
   const u = TL.u = Math.round(clamp(Math.min(land ? (h - top - S.b) / 4.45 : 99, (w - S.l - S.r) * (land ? 0.5 : 0.55) / 3.6), 34, 62));
   TL.w = w; TL.h = h;
   const ax = w - S.r - 0.25 * u, ay = h - S.b - 0.25 * u;
-  document.querySelectorAll('#tctl [data-act]').forEach(b => {
-    const [x, y, d] = TOUCH_BTNS[b.dataset.act], px = Math.round(d * u);
+  document.querySelectorAll('#tctl [data-act], #tctl [data-ui]').forEach(b => {
+    const [x, y, d] = TOUCH_BTNS[b.dataset.act || b.dataset.ui], px = Math.round(d * u);
     const st = b.style;
     st.width = st.height = px + 'px';
     st.left = Math.round(ax + x * u - px / 2) + 'px'; st.top = Math.round(ay + y * u - px / 2) + 'px';
@@ -3584,6 +3649,7 @@ async function cloudAuth(kind) {
     CLOUD.form.pass = ''; CLOUD.msg = ''; CLOUD.state = ''; CLOUD.rank.data = {};
     cloudSaveToken();
     toast(kind === 'login' ? `登入成功，歡迎回來 ${CLOUD.user}` : `註冊成功，歡迎 ${CLOUD.user}`, '#9ff0c8'); SFX.quest();
+    netWake();
     await cloudCheck(false);
   } catch (e) {
     CLOUD.msg = (e && e.msg) || '登入失敗'; CLOUD.msgOk = false; SFX.deny();
@@ -3606,6 +3672,7 @@ function cloudSignedOut(msg, ok) {
   cloudSaveToken();
   toast(msg, ok ? '#d8cfb4' : '#ffb3a8');
   cloudRefresh();
+  netWake();
 }
 // 背景切換時（例如手機切到其他 App）盡快上傳
 function cloudFlush() { if (cloudOn() && !CLOUD.pending && Date.now() - CLOUD.lastUpload > 5000) cloudUpload(); }
@@ -3628,6 +3695,486 @@ function cloudInit() {
   cloudLoadToken();
   if (cloudOn()) cloudCheck(true);
 }
+// ================= 多人同步（第五階段）：在線狀態、頻道、聊天、表情 =================
+// PythonAnywhere 不支援 WebSocket，所以用 HTTP 輪詢：每次回報自己的狀態，同時拿回同頻道的其他玩家與新聊天（一次來回）。
+// 只有登入雲端帳號的玩家會出現在別人的畫面上；訪客可以觀看（唯讀、不能聊天）。
+// 連不上時安靜地以指數退避重試，只在狀態改變時提示一次；玩家名稱與聊天內容一律用 textContent 或畫布顯示，不使用 innerHTML。
+const NET_INTERP = 0.5;          // 其他玩家的位置緩衝（秒）：顯示約 0.5 秒前的狀態，兩筆回報之間平滑內插（網路不穩時自動加長到 1 秒）
+const NET_SNAP = 600;            // 兩筆回報距離超過這個值（例如重生、傳送）就直接瞬移，不內插
+const CHAT_MAX = 60, CHAT_LOG_MAX = 80, BUBBLE_SEC = 4.5, EMOTE_SEC = 3;
+const EMOTES = ['開心', '愛心', '哭哭', '生氣', '驚訝', '音符'];
+const EMOTE_KEYS = { Digit3: 0, Digit4: 1, Digit5: 2, Digit6: 3, Digit7: 4, Digit8: 5, Numpad3: 0, Numpad4: 1, Numpad5: 2, Numpad6: 3, Numpad7: 4, Numpad8: 5 };
+const NET_STATES = ['idle', 'walk', 'jump', 'climb', 'prone', 'dead'];
+const NET_ACTS = ['melee', 'stab', 'shot', 'pshot', 'skill', 'heavy', 'spin', 'thrust', 'cast'];
+const NET = {
+  st: '',             // '' 連線中／ok 已連線／offline 連不上（重試中）／unsup 伺服器尚未支援／full 頻道全滿／off 雲端未設定
+  mode: '',           // 'u:帳號' 登入後回報自己的狀態／'g' 訪客觀看
+  ch: 0, want: 0, nch: 10, cap: 20, online: 0, total: 0, chans: [], me: 0,
+  others: new Map(),  // 同頻道的其他玩家 id → 遠端玩家
+  cursor: 0, joined: false, seen: new Set(), log: [], logT: -1e9, logH: 0,
+  timer: null, nextAt: 0, busy: false, fails: 0, lastReq: 0, off: null, delay: NET_INTERP, sentSig: '', changeAt: 0,
+  an: 0, ak: '', ad: 0, lastAtkT: 0,          // 自己的攻擊序號／種類／動作長度（別人用序號變化來重播攻擊動作）
+  em: -1, en: 0, emT: 0, emCD: 0,             // 自己的表情
+  bub: null, bubT: 0,                         // 自己頭上的聊天泡泡
+  card: 0, chatOpen: false, sending: false, winSig: '', hudRect: null,
+};
+const netNow = () => Date.now();
+function myName() { return cloudOn() && CLOUD.user ? CLOUD.user : PLAYER_NAME; }
+function netLater(ms) { clearTimeout(NET.timer); NET.nextAt = netNow() + ms; NET.timer = setTimeout(netTick, ms); }
+function netWake() { if (!NET.busy && API.ready) netLater(Math.max(30, NET.lastReq + 250 - netNow())); }
+function netClear() { NET.others.clear(); if (NET.card) { NET.card = 0; renderCard(); } }
+function netReset(mode) {
+  NET.mode = mode; netClear();
+  Object.assign(NET, { ch: 0, want: 0, online: 0, total: 0, chans: [], me: 0, cursor: 0, joined: false, st: '', fails: 0, log: [], logT: -1e9, sentSig: '' });
+  NET.seen.clear();
+  if (G.ui.win === 'social') renderWin();
+}
+// 自己目前的動作狀態（攻擊動作另外用攻擊序號傳送）
+function baseState(p) { return p.dead ? 'dead' : p.rope ? 'climb' : p.prone ? 'prone' : !p.onGround ? 'jump' : Math.abs(p.vx) > 20 ? 'walk' : 'idle'; }
+function netSig(p) { return [Math.round(p.x / 6), Math.round(p.y / 6), p.face, baseState(p), NET.an, NET.en, p.lv, p.job].join(); }
+function netBody() {
+  const p = G.player, eq = {};
+  for (const k of SLOT_ORDER) if (p.equip[k]) eq[k] = [p.equip[k].b, p.equip[k].r];
+  NET.sentSig = netSig(p);
+  return { ch: NET.want || NET.ch, sw: !!NET.want, x: Math.round(p.x), y: Math.round(p.y), f: p.face, st: baseState(p), ak: NET.ak, ad: NET.ad, an: NET.an,
+    job: p.job, lv: p.lv, eq, em: NET.emT > 0 ? NET.em : -1, en: NET.en, after: NET.joined ? NET.cursor : 0 };
+}
+// 輪詢間隔：附近有其他玩家時 0.4 秒；附近沒人時移動中 1 秒、靜止 2 秒；分頁在背景時 2 秒
+function netInterval() {
+  const p = G.player;
+  if (document.hidden) return 2000;
+  let near = false;
+  if (SETTINGS.others) for (const R of NET.others.values()) if (Math.abs(R.x - p.x) < VIEW_W && Math.abs(R.y - p.y) < VIEW_H) { near = true; break; }
+  if (NET.mode === 'g') return near ? 500 : 2000;
+  return near ? 400 : netNow() - NET.changeAt < 3000 ? 1000 : 2000;
+}
+async function netTick() {
+  NET.timer = null;
+  if (NET.busy) return;
+  if (!API.ready) { NET.st = 'off'; return; }
+  const p = G.player;
+  if (!p || (G.hint && !G.introShown)) { netLater(1000); return; }   // 還在開場說明畫面（尚未進入遊戲）
+  const mode = cloudOn() ? 'u:' + CLOUD.user.toLowerCase() : 'g';
+  if (mode !== NET.mode) netReset(mode);
+  NET.busy = true; NET.lastReq = netNow();
+  let r = null, err = null;
+  try {
+    r = mode === 'g' ? await api('GET', `/api/presence?ch=${NET.want || NET.ch}&after=${NET.joined ? NET.cursor : 0}`) : await api('POST', '/api/presence', netBody());
+  } catch (e) { err = e || {}; }
+  NET.busy = false;
+  if (mode !== (cloudOn() ? 'u:' + CLOUD.user.toLowerCase() : 'g')) { netLater(50); return; }   // 等待回應期間登入／登出了：重新來過
+  if (err) { netFail(err); return; }
+  netApply(r, mode === 'g');
+  netLater(netInterval());
+}
+function netFail(e) {
+  if (e.status === 401 && CLOUD.token) { cloudFail(e); netLater(300); return; }   // 登入過期：登出後改用訪客模式
+  if (e.status === 404 || e.status === 405) { NET.st = 'unsup'; netClear(); netLater(60000); return; }   // 後端還沒更新到第五階段
+  if (e.status === 429) { netLater(1500); return; }
+  if (e.status === 503) { if (NET.st !== 'full') toast('所有頻道都已滿，稍後自動重試', '#ffb3a8'); NET.st = 'full'; netClear(); netLater(10000); return; }
+  NET.fails++;
+  if (NET.st === 'ok') toast('多人連線中斷，稍後自動重試', '#ffb3a8');
+  NET.st = 'offline'; netClear();
+  netLater(Math.min(30000, 1000 * Math.pow(2, Math.min(5, NET.fails))));
+  netRefreshWin();
+}
+// 套用伺服器回應：頻道資訊、其他玩家、新聊天
+function netApply(r, guest) {
+  const was = NET.st;
+  NET.st = 'ok'; NET.fails = 0;
+  if (was === 'offline' || was === 'full') toast('已重新連上多人伺服器', '#9ff0c8');
+  const ch = clamp(n0(r.ch), 1, 99), prev = NET.ch;
+  NET.nch = clamp(n0(r.nch) || 10, 1, 99); NET.cap = clamp(n0(r.cap) || 20, 1, 999);
+  NET.online = n0(r.online); NET.total = n0(r.total);
+  NET.chans = Array.isArray(r.chans) ? r.chans.slice(0, NET.nch).map(n0) : [];
+  if (!guest) NET.me = n0(r.me);
+  const off = (+r.now || netNow()) - netNow();
+  NET.off = NET.off === null || Math.abs(off - NET.off) > 2000 ? off : NET.off + (off - NET.off) * 0.1;
+  if (prev !== ch) {
+    netClear();
+    chatSys(NET.want === ch ? `已切換到頻道 ${ch}` : guest ? `正在觀看頻道 ${ch}（訪客：登入後其他玩家才看得到你，也才能聊天）` : `已進入頻道 ${ch}（最多 ${NET.cap} 人）`);
+    if (NET.want === ch) { toast(`已切換到頻道 ${ch}`, '#9ff0c8'); SFX.click(); }
+  }
+  if (NET.want) { if (r.sw_err && NET.want !== ch) { toast(String(r.sw_err).slice(0, 60), '#ffb3a8'); SFX.deny(); } NET.want = 0; }
+  NET.ch = ch;
+  const ids = new Set();
+  for (const q of Array.isArray(r.players) ? r.players.slice(0, 60) : []) { const id = netPlayer(q); if (id) ids.add(id); }
+  for (const id of NET.others.keys()) if (!ids.has(id)) NET.others.delete(id);
+  const hist = !NET.joined || prev !== ch;   // 剛進入頻道時拿到的是歷史訊息（不顯示泡泡）；之後一律用 id 去除重複
+  for (const m of Array.isArray(r.chat) ? r.chat.slice(-60) : []) chatAdd(m, hist);
+  NET.cursor = n0(r.cursor); NET.joined = true;
+  if (NET.card) renderCard();
+  netRefreshWin();
+}
+// 只留下畫面需要、而且格式正確的欄位（伺服器已檢查過，這裡再檢查一次）
+const netText = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁩﻿]/g, '').slice(0, n);
+function netPlayer(q) {
+  if (!q || typeof q !== 'object') return 0;
+  const id = n0(q.id), x = +q.x, y = +q.y, ts = +q.ts;
+  if (!id || id === NET.me || !isFinite(x) || !isFinite(y) || !isFinite(ts)) return 0;
+  let R = NET.others.get(id);
+  if (!R) { R = { id, snaps: [], lastTs: 0, x, y, f: 1, st: 'idle', anim: 0, an0: null, atkT: 0, atkDur: 0.3, atkKind: '', em: -1, en: null, emT: 0, bub: null, bubT: 0, equip: {} }; NET.others.set(id, R); }
+  R.name = netText(q.name, 12) || '？';
+  R.job = JOBS[q.job] ? q.job : 'novice';
+  R.lv = clamp(n0(q.lv) || 1, 1, 200);
+  R.equip = {};
+  if (q.eq && typeof q.eq === 'object') for (const k of SLOT_ORDER) {
+    const v = q.eq[k];
+    if (Array.isArray(v) && ITEMS[v[0]] && ITEMS[v[0]].slot === k) R.equip[k] = { b: v[0], r: clamp(n0(v[1]), 0, RARITY.length - 1) };
+  }
+  if (ts > R.lastTs) {
+    R.lastTs = ts;
+    R.snaps.push({ t: ts - NET.off, x: clamp(x, 0, WORLD_W), y: clamp(y, 0, WORLD_H), f: q.f === -1 ? -1 : 1, st: NET_STATES.includes(q.st) ? q.st : 'idle',
+      an: n0(q.an), ak: NET_ACTS.includes(q.ak) ? q.ak : 'melee', ad: clamp(+q.ad || 0.3, 0.1, 1.5) });
+    if (R.snaps.length > 12) R.snaps.splice(0, R.snaps.length - 12);
+  }
+  // 表情：序號變了而且開始不到 3 秒才顯示（剛看到這位玩家時也一樣）
+  const en = n0(q.en), em = Number.isInteger(q.em) ? q.em : -1;
+  if (en !== R.en) { R.en = en; if (em >= 0 && em < EMOTES.length && q.ea != null && +q.ea < EMOTE_SEC * 1000) { R.em = em; R.emT = EMOTE_SEC - +q.ea / 1000; } }
+  return id;
+}
+// 每一幀：其他玩家的位置內插、動畫與計時器（不受「開視窗時暫停」影響）
+function netFrame(dt) {
+  if (NET.emT > 0) NET.emT -= dt;
+  if (NET.emCD > 0) NET.emCD -= dt;
+  if (NET.bubT > 0) NET.bubT -= dt;
+  const rt = netNow() - NET.delay * 1000;
+  let starve = false;
+  for (const R of NET.others.values()) {
+    const S = R.snaps;
+    if (!S.length) continue;
+    let a = S[0], b = null;
+    for (let i = 0; i < S.length; i++) { if (S[i].t <= rt) { a = S[i]; b = S[i + 1] || null; } else break; }
+    if (S[0].t > rt) { a = S[0]; b = null; }
+    let x = a.x, y = a.y;
+    if (b) {
+      const k = clamp((rt - a.t) / Math.max(1, b.t - a.t), 0, 1);
+      if (Math.hypot(b.x - a.x, b.y - a.y) < NET_SNAP) { x = lerp(a.x, b.x, k); y = lerp(a.y, b.y, k); }
+      R.f = k > 0.5 ? b.f : a.f;
+    } else {
+      R.f = a.f;
+      if (a === S[S.length - 1] && rt > a.t + 80 && a.st !== 'idle' && a.st !== 'dead' && netNow() - a.t < 3000) starve = true;   // 下一筆還沒到
+    }
+    const dy = y - R.y;
+    R.x = x; R.y = y; R.st = a.st;
+    if (R.an0 === null) R.an0 = a.an;
+    else if (a.an !== R.an0) { R.an0 = a.an; R.atkT = R.atkDur = a.ad; R.atkKind = a.ak; }   // 攻擊序號變了：重播一次攻擊動作
+    if (R.atkT > 0) R.atkT = Math.max(0, R.atkT - dt);
+    if (R.st === 'walk' || (R.st === 'climb' && Math.abs(dy) > 0.05)) R.anim += dt; else if (R.st !== 'climb') R.anim = 0;
+    if (R.emT > 0) R.emT -= dt;
+    if (R.bubT > 0) R.bubT -= dt;
+  }
+  NET.delay = starve ? Math.min(1, NET.delay + dt * 0.4) : Math.max(NET_INTERP, NET.delay - dt * 0.02);
+  // 自己開始移動或出手時，不要等到下一次「慢速」輪詢
+  const p = G.player;
+  if (p && NET.mode && NET.mode !== 'g' && NET.st === 'ok' && !NET.busy && NET.nextAt - netNow() > 450 && netSig(p) !== NET.sentSig) {
+    NET.changeAt = netNow(); netLater(Math.max(0, NET.lastReq + 400 - netNow()));
+  }
+}
+// 在 update() 裡呼叫：偵測自己新的攻擊／施法（攻擊計時變大 = 剛出手）
+function netTrack(p) {
+  if (p.atkT > NET.lastAtkT + 1e-4) { NET.an = (NET.an + 1) % 1e9; NET.ak = p.atkKind; NET.ad = Math.round(p.atkDur * 100) / 100; }
+  NET.lastAtkT = p.atkT;
+}
+// 社群視窗開著時，頻道人數、玩家列表或聊天有變化才重新繪製（避免一直重繪導致按鈕點不到）
+const netWinSig = () => [NET.st, NET.mode, NET.ch, NET.want, NET.online, NET.total, NET.chans.join(), NET.log.length && NET.log[NET.log.length - 1].k,
+  [...NET.others.values()].map(R => R.id + ':' + R.lv + R.job + R.name + areaOf(R.x)).join()].join('|');
+function netRefreshWin() { if (G.ui.win === 'social' && netWinSig() !== NET.winSig) renderWin(); }
+function netStatusText() {
+  if (!API.ready || NET.st === 'off') return '';
+  if (NET.st === 'offline') return '多人連線：離線（重試中）';
+  if (NET.st === 'unsup') return '多人連線：伺服器尚未支援';
+  if (NET.st === 'full') return '頻道全滿，稍後重試';
+  if (NET.st !== 'ok') return '多人連線：連線中…';
+  return `頻道 ${NET.ch} · 線上 ${NET.online} 人${NET.mode === 'g' ? '（觀看中）' : ''}`;
+}
+
+// ---- 聊天 ----
+function chatSys(text) { chatPush({ k: 'sys' + netNow() + Math.random(), sys: true, text }); }
+function chatPush(e) {
+  NET.log.push(e);
+  if (NET.log.length > CHAT_LOG_MAX) NET.log.splice(0, NET.log.length - CHAT_LOG_MAX);
+  if (!e.hist) NET.logT = performance.now();
+}
+function chatAdd(m, hist) {
+  if (!m || typeof m !== 'object') return;
+  const id = n0(m.id);
+  if (!id || NET.seen.has(id)) return;
+  NET.seen.add(id);
+  if (NET.seen.size > 600) NET.seen = new Set([...NET.seen].slice(-300));
+  const uid = n0(m.uid), text = netText(m.text, CHAT_MAX + 4);
+  if (!text) return;
+  const mine = !!NET.me && uid === NET.me;
+  chatPush({ k: id, uid, name: netText(m.name, 12), text, hist, me: mine });
+  if (hist) return;
+  if (mine) { NET.bub = text; NET.bubT = BUBBLE_SEC; return; }
+  const R = NET.others.get(uid);
+  if (R) { R.bub = text; R.bubT = BUBBLE_SEC; }
+  SFX.chat();
+}
+function openChat() {
+  const p = G.player;
+  if (!p || G.hint || G.deathShown) return;
+  if (G.ui.dlg) closeDlg();
+  const el = $('chatBar'), inp = $('chatIn');
+  NET.chatOpen = true; releaseAll();
+  el.classList.add('show');
+  const can = cloudOn();
+  inp.disabled = !can;
+  inp.placeholder = !API.ready ? '雲端功能尚未設定，無法聊天' : can ? '輸入訊息（最多 60 字），Enter 送出' : '登入後才能聊天（按 L 登入），表情可直接使用';
+  chatHint(can && NET.st !== 'ok' ? '多人連線尚未連上，訊息可能送不出去' : '', false);
+  if (can) { try { inp.focus({ preventScroll: true }); } catch (e) {} }   // 同步呼叫：手機上才會跳出鍵盤
+}
+function closeChat() {
+  if (!NET.chatOpen) return;
+  NET.chatOpen = false;
+  const inp = $('chatIn');
+  if (document.activeElement === inp) inp.blur();
+  $('chatBar').classList.remove('show');
+}
+function chatHint(msg, bad = true) { const el = $('chatMsg'); el.textContent = msg; el.classList.toggle('bad', !!bad); }
+async function chatSend() {
+  const inp = $('chatIn'), text = inp.value.replace(/\s+/g, ' ').trim();
+  if (!text) { closeChat(); return; }
+  if (!cloudOn()) { chatHint('登入後才能聊天（按 L 登入）'); SFX.deny(); return; }
+  if (NET.sending) return;
+  if ([...text].length > CHAT_MAX) { chatHint(`訊息最多 ${CHAT_MAX} 個字`); SFX.deny(); return; }
+  NET.sending = true; chatHint('傳送中…', false);
+  try {
+    const r = await api('POST', '/api/chat', { text });
+    inp.value = ''; chatHint('', false);
+    chatAdd(r.msg, false);
+    if (!isTouch) closeChat();
+  } catch (e) {
+    chatHint((e && e.msg) || '傳送失敗'); SFX.deny();
+    if (e && e.status === 401) cloudFail(e);
+  }
+  NET.sending = false;
+}
+// ---- 表情（3～8 鍵或聊天列／社群視窗的按鈕） ----
+function doEmote(i) {
+  const p = G.player;
+  if (!p || p.dead || i < 0 || i >= EMOTES.length || NET.emCD > 0) return;
+  NET.em = i; NET.en = (NET.en + 1) % 1e9; NET.emT = EMOTE_SEC; NET.emCD = 0.8;
+  SFX.click();
+  if (NET.mode && NET.mode !== 'g' && NET.st === 'ok') netWake();
+}
+
+// ---- 點擊其他玩家：角色資訊卡 ----
+function netPick(e) {
+  if (!SETTINGS.others || !NET.others.size) return null;
+  const r = cv.getBoundingClientRect();
+  const wx = (e.clientX - r.left) / r.width * VIEW_W + G.cam.x, wy = (e.clientY - r.top) / r.height * VIEW_H + G.cam.y;
+  let best = null, bd = 1e9;
+  for (const R of NET.others.values()) {
+    const d = Math.abs(wx - R.x);
+    if (d < 22 && wy > R.y - 66 && wy < R.y + 32 && d < bd) { best = R; bd = d; }
+  }
+  return best;
+}
+function playerTap(e) { const R = netPick(e); if (!R) return false; NET.card = R.id; SFX.click(); renderCard(); return true; }
+function netHudTap(e) {
+  const h = NET.hudRect;
+  if (!h) return false;
+  const r = cv.getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * VIEW_W, vy = (e.clientY - r.top) / r.height * VIEW_H;
+  if (vx < h[0] || vx > h[0] + h[2] || vy < h[1] || vy > h[1] + h[3]) return false;
+  openWin('social'); return true;
+}
+function renderCard() {
+  const el = $('pcard'), R = NET.card ? NET.others.get(NET.card) : null;
+  el.textContent = '';
+  if (!R || !SETTINGS.others) { NET.card = 0; el.classList.remove('show'); return; }
+  const mk = (tag, cls, text, parent) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; (parent || el).appendChild(n); return n; };
+  const head = mk('div', 'ph');
+  mk('div', 'nm', R.name, head);
+  const x = mk('button', 'xbtn', '✕', head); x.setAttribute('aria-label', '關閉'); x.addEventListener('click', ev => { ev.stopPropagation(); NET.card = 0; renderCard(); });
+  mk('div', 'sub', `Lv.${R.lv}・${JOBS[R.job].name}・頻道 ${NET.ch}`);
+  for (const k of SLOT_ORDER) {
+    const it = R.equip[k], row = mk('div', 'st');
+    mk('span', 'dim', SLOTS[k], row);
+    if (!it) { mk('span', 'dim', '—', row); continue; }
+    const v = mk('span', null, null, row), R0 = RARITY[it.r];
+    const nm = mk('span', null, ITEMS[it.b].name, v); nm.style.color = R0.color; nm.style.fontWeight = '800';
+    mk('span', 'tg', R0.name, v);
+  }
+  el.classList.add('show');
+}
+
+// ---- 繪製：其他玩家、表情、聊天泡泡、頻道資訊、聊天紀錄 ----
+function drawRemotes() {
+  if (!SETTINGS.others) return;
+  const cx = G.cam.x;
+  for (const R of NET.others.values()) {
+    if (!R.snaps.length || R.x < cx - 80 || R.x > cx + VIEW_W + 80) continue;
+    const st = R.st, o = { job: R.job, anim: R.anim, x: R.x, equip: R.equip, atkT: R.atkT, atkDur: R.atkDur || 0.3, atkKind: R.atkKind, hurtT: 0,
+      onGround: st !== 'jump' && st !== 'climb', vx: st === 'walk' ? 100 : 0, rope: st === 'climb' ? 1 : null, prone: st === 'prone', dead: false };
+    ctx.save(); ctx.translate(R.x, R.y);
+    if (o.onGround) { ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(0, 0, 14, 3.5, 0, 0, Math.PI * 2); ctx.fill(); }
+    if (st === 'dead') { ctx.globalAlpha = 0.55; ctx.rotate(-R.f * Math.PI / 2); ctx.translate(0, 4); }
+    ctx.scale(R.f, 1);
+    drawHero(o);
+    ctx.restore();
+    // 名牌：名稱＋等級與職業
+    ctx.save(); ctx.textAlign = 'center';
+    ctx.font = `700 11px ${FONT}`;
+    const nw = ctx.measureText(R.name).width + 10;
+    ctx.fillStyle = 'rgba(18,36,64,.78)'; ctx.beginPath(); rr(R.x - nw / 2, R.y + 4, nw, 15, 4); ctx.fill();
+    ctx.fillStyle = '#d8ecff'; ctx.fillText(R.name, R.x, R.y + 15.5);
+    const sub = `Lv.${R.lv} ${JOBS[R.job].name}`;
+    ctx.font = `700 9.5px ${FONT}`;
+    const sw = ctx.measureText(sub).width + 8;
+    ctx.fillStyle = 'rgba(14,23,20,.6)'; ctx.beginPath(); rr(R.x - sw / 2, R.y + 20, sw, 12, 3); ctx.fill();
+    ctx.fillStyle = '#bfd3c4'; ctx.fillText(sub, R.x, R.y + 29.5);
+    if (NET.card === R.id) { ctx.strokeStyle = '#6ab8ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(R.x, R.y, 20, 5, 0, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.restore();
+  }
+}
+// 頭上的表情與聊天泡泡（畫在所有角色之上）
+function drawSocialFx() {
+  const p = G.player, cx = G.cam.x;
+  const top = st => st === 'prone' ? 34 : 72;
+  const one = (x, y, st, em, emT, bub, bubT, own) => {
+    let y0 = y - top(st);
+    if (SETTINGS.bubbles && bub && bubT > 0) { y0 = drawBubble(x, y0, bub, bubT, own) - 4; }
+    if (em >= 0 && emT > 0) drawEmote(x, y0 - 16, em, emT);
+  };
+  if (p && !p.dead) one(p.x, p.y, baseState(p), NET.em, NET.emT, NET.bub, NET.bubT, true);
+  if (!SETTINGS.others) return;
+  for (const R of NET.others.values()) {
+    if (R.x < cx - 120 || R.x > cx + VIEW_W + 120 || !R.snaps.length) continue;
+    one(R.x, R.y, R.st, R.em, R.emT, R.bub, R.bubT, false);
+  }
+}
+// 聊天泡泡：依寬度自動換行（中文逐字換行），最多 3 行；回傳泡泡上緣的 y
+function bubbleLines(text) {
+  ctx.font = `600 12px ${FONT}`;
+  const lines = [];
+  let cur = '';
+  for (const c of text) {
+    if (ctx.measureText(cur + c).width > 150 && cur) { lines.push(cur); cur = ''; if (lines.length === 3) break; }
+    cur += c;
+  }
+  if (lines.length < 3 && cur) lines.push(cur);
+  else if (cur && lines.length === 3) lines[2] = lines[2].slice(0, -1) + '…';
+  return lines;
+}
+function drawBubble(x, y, text, t, own) {
+  const lines = bubbleLines(text);
+  let w = 0;
+  for (const l of lines) w = Math.max(w, ctx.measureText(l).width);
+  w += 16;
+  const h = lines.length * 15 + 9, a = Math.min(1, t / 0.4, (BUBBLE_SEC - t) / 0.15 + 0.2);
+  ctx.save(); ctx.globalAlpha = clamp(a, 0, 1);
+  ctx.fillStyle = own ? 'rgba(236,255,244,.96)' : 'rgba(255,253,246,.96)';
+  ctx.strokeStyle = own ? '#3f8f6b' : '#5a4a2a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); rr(x - w / 2, y - h - 6, w, h, 7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 5, y - 6.8); ctx.lineTo(x, y); ctx.lineTo(x + 5, y - 6.8); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - 5, y - 6); ctx.lineTo(x, y); ctx.lineTo(x + 5, y - 6); ctx.stroke();
+  ctx.fillStyle = '#2b1d17'; ctx.textAlign = 'center';
+  lines.forEach((l, i) => ctx.fillText(l, x, y - h - 6 + 16 + i * 15));
+  ctx.restore();
+  return y - h - 6;
+}
+function drawEmote(x, y, i, t) {
+  t = Math.min(t, EMOTE_SEC);
+  const pop = t > EMOTE_SEC - 0.25 ? 0.4 + (EMOTE_SEC - t) / 0.25 * 0.6 : 1, a = Math.min(1, t / 0.3);
+  ctx.save(); ctx.globalAlpha = clamp(a, 0, 1);
+  ctx.translate(x, y + Math.sin(G.time * 5) * 1.5); ctx.scale(pop, pop);
+  shape('rgba(255,255,255,.92)', () => ell(0, 0, 15, 15), 1.5, '#5a4a2a');
+  emoteShape(i, 11);
+  ctx.restore();
+}
+// 表情圖案（以 (0,0) 為中心、半徑約 s）：開心、愛心、哭哭、生氣、驚訝、音符
+function emoteShape(i, s) {
+  const k = s / 11;
+  ctx.save(); ctx.scale(k, k); ctx.lineCap = 'round';
+  const face = col => shape(col, () => ell(0, 1, 10, 10), 1.5);
+  const line = (pts, col = OUT, w = 1.6) => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); pts.forEach(([px, py], j) => j ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.stroke(); };
+  if (i === 0) {        // 開心
+    face('#ffd84a');
+    ctx.strokeStyle = OUT; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(-3.5, -0.5, 2, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+    ctx.beginPath(); ctx.arc(3.5, -0.5, 2, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+    shape('#c8423a', () => { ctx.moveTo(-4.5, 3); ctx.quadraticCurveTo(0, 9.5, 4.5, 3); ctx.closePath(); }, 1.2);
+    ctx.fillStyle = 'rgba(255,120,110,.55)'; ctx.beginPath(); ctx.ellipse(-6.5, 3, 2, 1.2, 0, 0, Math.PI * 2); ctx.ellipse(6.5, 3, 2, 1.2, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (i === 1) { // 愛心
+    shape('#ff4d6a', () => { ctx.moveTo(0, 9); ctx.bezierCurveTo(-13, 0, -7, -11, 0, -4); ctx.bezierCurveTo(7, -11, 13, 0, 0, 9); ctx.closePath(); }, 1.5, '#7a1020');
+    ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.ellipse(-4.5, -3, 2, 1.3, -0.6, 0, Math.PI * 2); ctx.fill();
+  } else if (i === 2) { // 哭哭
+    face('#ffd84a');
+    line([[-6, -2.5], [-2, -1.5]]); line([[6, -2.5], [2, -1.5]]);
+    ctx.strokeStyle = OUT; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(0, 7.5, 3.5, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+    shape('#5ab0ff', () => { ctx.moveTo(-4.5, 0); ctx.quadraticCurveTo(-7.5, 6, -4.5, 7); ctx.quadraticCurveTo(-1.5, 6, -4.5, 0); }, 1, '#1f5fa0');
+    shape('#5ab0ff', () => { ctx.moveTo(4.5, 0); ctx.quadraticCurveTo(1.5, 6, 4.5, 7); ctx.quadraticCurveTo(7.5, 6, 4.5, 0); }, 1, '#1f5fa0');
+  } else if (i === 3) { // 生氣
+    face('#ff8a5a');
+    line([[-7, -4], [-2, -1.5]], OUT, 2); line([[7, -4], [2, -1.5]], OUT, 2);
+    ctx.fillStyle = OUT; ctx.fillRect(-4.5, 0, 2, 2.4); ctx.fillRect(2.5, 0, 2, 2.4);
+    line([[-4, 6.5], [0, 4.5], [4, 6.5]]);
+    line([[5, -11], [8, -8]], '#d0202a', 1.8); line([[8, -11], [5, -8]], '#d0202a', 1.8);
+  } else if (i === 4) { // 驚訝
+    face('#ffd84a');
+    shape('#ffffff', () => { ell(-3.5, -1.5, 2.6, 3); ell(3.5, -1.5, 2.6, 3); }, 1.2);
+    ctx.fillStyle = OUT; ctx.fillRect(-4, -1.5, 1.6, 2); ctx.fillRect(3, -1.5, 1.6, 2);
+    shape('#7a2a1a', () => ell(0, 5.5, 2.3, 2.8), 1.2);
+  } else {              // 音符
+    ctx.fillStyle = '#4a3680'; ctx.strokeStyle = '#4a3680';
+    ctx.beginPath(); ctx.ellipse(-3.5, 6, 3.6, 2.7, -0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(-0.2, 5.5); ctx.lineTo(-0.2, -8); ctx.quadraticCurveTo(4, -6, 7, -2); ctx.stroke();
+    ctx.fillStyle = '#ffb84a'; ctx.beginPath(); for (let j = 0; j < 10; j++) { const an = -Math.PI / 2 + j * Math.PI / 5, rr2 = j % 2 ? 1.4 : 3.2; ctx.lineTo(6 + Math.cos(an) * rr2, 5 + Math.sin(an) * rr2); } ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+// 小地圖下方：頻道與線上人數（點擊開啟社群視窗）
+function drawNetHud() {
+  const t = netStatusText();
+  NET.hudRect = null;
+  if (!t) return;
+  const mw = miniW(), mh = Math.round(mw * 0.24), x1 = VIEW_W - 4 - safeV('r'), y = 24 + mh + 8;
+  ctx.save(); ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'right';
+  const w = ctx.measureText(t).width + 14, x0 = x1 - w;
+  ctx.fillStyle = 'rgba(14,23,20,.72)'; ctx.beginPath(); rr(x0, y, w, 18, 5); ctx.fill();
+  ctx.fillStyle = NET.st === 'ok' ? (NET.mode === 'g' ? '#bfd3c4' : '#9ff0c8') : NET.st === 'offline' || NET.st === 'full' ? '#ffb3a8' : '#d8cfb4';
+  ctx.fillText(t, x1 - 7, y + 13);
+  ctx.restore();
+  NET.hudRect = [x0, y, w, 18];
+}
+// 畫面左下：最近的聊天（有新訊息時顯示 12 秒；聊天輸入框開著時一直顯示）
+function drawChatLog() {
+  const open = NET.chatOpen, age = (performance.now() - NET.logT) / 1000;
+  const k = VIEW_W / (cv.clientWidth || VIEW_W), bar = open ? ($('chatBar').offsetHeight + 8) * k : 0;
+  NET.logH = bar;   // 提示訊息（toast）往上移，避免被聊天輸入列或聊天紀錄蓋住
+  const a = open ? 1 : clamp(1 - (age - 12) / 1.5, 0, 1);
+  if (!NET.log.length || a <= 0) return;
+  const n = open ? 7 : 5, list = NET.log.slice(-n), lh = 16, maxW = Math.min(440, VIEW_W * 0.58);
+  const x = 8 + safeV('l'), h = list.length * lh + 8, y = VIEW_H - 8 - bar - h;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(14,23,20,.62)'; ctx.beginPath(); rr(x, y, maxW + 12, h, 6); ctx.fill();
+  ctx.font = `600 12px ${FONT}`; ctx.textAlign = 'left';
+  list.forEach((e, i) => {
+    const yy = y + 4 + (i + 1) * lh - 4;
+    if (e.sys) { ctx.fillStyle = '#9fbfae'; ctx.fillText(fitCached(e, '※ ' + e.text, maxW), x + 6, yy); return; }
+    const nm = e.name + '：';
+    ctx.fillStyle = e.me ? '#9ff0c8' : '#ffe08a'; ctx.fillText(nm, x + 6, yy);
+    const nw = ctx.measureText(nm).width;
+    ctx.fillStyle = e.hist ? '#c9c4b4' : '#ffffff'; ctx.fillText(fitCached(e, e.text, maxW - nw), x + 6 + nw, yy);
+  });
+  ctx.restore();
+  NET.logH = (h + 6) * a + bar;
+}
+function fitCached(e, t, maxW) { if (!e.fit || e.fitW !== maxW) { e.fit = fitText(t, maxW); e.fitW = maxW; } return e.fit; }   // 截斷結果暫存起來，不用每幀重算
+function fitText(t, maxW) {
+  if (ctx.measureText(t).width <= maxW) return t;
+  let s = t;
+  while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+  return s + '…';
+}
+function netInit() {
+  if (!API.ready) { NET.st = 'off'; return; }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && NET.nextAt - netNow() > 600) netWake(); });
+  netLater(800);
+}
+
 const CLOUD_NOT_READY = '<div class="hd">雲端功能尚未設定</div><div class="det">目前只使用本機存檔，遊戲可以正常遊玩。' +
   '<div class="d dim" style="margin-top:4px">開發者：部署後端（見 server/DEPLOY.md）後，把 index.html 開頭的 PA_USERNAME 改成 PythonAnywhere 帳號名稱，即可啟用雲端存檔與排行榜。</div></div>';
 function saveCard(title, pl, at, act, label) {
@@ -3656,6 +4203,7 @@ const KEY_HELP = [
   ['← →', '移動'], ['↑ ↓', '攀爬繩索／趴下'], ['Alt / 空白鍵', '跳躍（↓ + 跳躍：從平台跳下）'], ['Ctrl / Z', '普通攻擊'],
   ['X / A / S / D', '技能快捷鍵'], ['1 / 2', '紅色／藍色藥水（按住連續使用）'], ['Shift + Enter', '商店一次買 10 瓶藥水'], ['↑ / Enter', '和 NPC 對話'],
   ['K / I / E / Q', '技能／背包／裝備／任務'], ['L / R', '帳號／排行榜'], ['O / Esc', '設定（沒有開視窗時按 Esc）'],
+  ['T', '聊天（Enter 送出・Esc 取消；需登入）'], ['3～8', '表情（開心／愛心／哭哭／生氣／驚訝／音符）'], ['C', '社群（頻道、同頻道玩家、聊天紀錄）'], ['滑鼠點擊其他玩家', '查看角色資訊'],
 ];
 
 // ================= 視窗（技能 / 背包 / 裝備 / 任務 / 商店 / 帳號 / 排行榜 / 設定 / 選單） =================
@@ -3884,18 +4432,66 @@ const WIN = {
         <div class="st"><span>按鈕不透明度</span><b id="taT">${Math.round(SETTINGS.tAlpha * 100)}%</b></div>
         <input type="range" class="rng" id="setTA" min="10" max="80" step="5" value="${Math.round(SETTINGS.tAlpha * 100)}" aria-label="觸控按鈕不透明度">
         <label class="setrow"><input type="checkbox" id="setRing" ${SETTINGS.joyRing ? 'checked' : ''}>顯示搖桿圈</label></div>
+      <div class="hd">多人連線</div>
+      <label class="setrow"><input type="checkbox" id="setOthers" ${SETTINGS.others ? 'checked' : ''}>顯示其他玩家</label>
+      <label class="setrow"><input type="checkbox" id="setBubbles" ${SETTINGS.bubbles ? 'checked' : ''}>顯示聊天泡泡</label>
+      <div class="d dim" style="margin:-2px 0 6px">${esc(netStatusText() || '多人連線：未連線')}。關閉「顯示其他玩家」只影響你自己的畫面，登入時別人仍看得到你。</div>
       <div class="hd">按鍵說明</div>
       <table class="keys keyOnly">${KEY_HELP.map(([k, t]) => `<tr><td>${k}</td><td>${t}</td></tr>`).join('')}</table>
       <div class="d touchOnly">觸控操作：左半邊畫面按住滑動來移動／攀爬／趴下（往上滑抓繩索或和 NPC 對話，往下滑趴下或往下爬；按住下滑再按「跳躍」可從平台跳下）；右下角為攻擊、跳躍、4 個技能與紅／藍藥水；畫面左上角的「選單」開啟各視窗。建議橫向遊玩。</div>
       <div class="acts2"><button class="sb alt" data-do="help">開啟遊戲說明</button></div>`;
     return [h, '<span class="keyOnly">←→ 音量・Enter 切換暫停・M 靜音・Esc 關閉</span><span>設定只保存在這台裝置</span>'];
   },
+  social() {   // 社群：頻道、表情、同頻道玩家、聊天紀錄（玩家名稱與聊天內容由 fillSocial 用 textContent 填入）
+    if (!API.ready) return [CLOUD_NOT_READY, ''];
+    const guest = NET.mode === 'g', st = netStatusText() || '多人連線：連線中…';
+    let h = `<div class="hd">${esc(st)}${NET.st === 'ok' ? `<span class="dim" style="font-weight:600;font-size:12px">（全部頻道共 ${NET.total} 人）</span>` : ''}</div>`;
+    if (guest) h += '<div class="d dim" style="margin-bottom:6px">訪客模式：可以看到其他玩家與聊天，<b>登入後</b>其他玩家才看得到你，也才能聊天（按 L 登入）。</div>';
+    if (NET.st === 'unsup') h += '<div class="det dim">伺服器還沒更新到支援多人同步的版本，遊戲其他功能不受影響。</div>';
+    if (NET.st === 'offline') h += '<div class="det dim">暫時連不上多人伺服器，會自動重試；遊戲與存檔不受影響。</div>';
+    if (NET.st === 'ok') {
+      h += `<div class="hd">頻道 <span class="dim" style="font-weight:600;font-size:12px">（每個頻道最多 ${NET.cap} 人）</span></div><div class="chgrid">`;
+      for (let c = 1; c <= NET.nch; c++) {
+        const n = NET.chans[c - 1] || 0, on = c === NET.ch, full = n >= NET.cap && !on;
+        h += `<button class="chb ${on ? 'on' : ''}" data-do="chan" data-a="${c}" ${full || on || NET.want ? 'disabled' : ''}>${c}<small>${full ? '已滿' : `${n} / ${NET.cap}`}</small></button>`;
+      }
+      h += '</div>';
+    }
+    h += `<div class="hd">表情 <span class="dim keyOnly" style="font-weight:600;font-size:12px">（鍵盤 3～8）</span></div><div class="emos">${EMOTES.map((n, i) => `<button class="emb" data-do="emote" data-a="${i}" title="${n}" aria-label="${n}"><img src="${itemIcon('emo:' + i).url}" alt=""></button>`).join('')}</div>`;
+    h += `<div class="hd">同頻道玩家（${NET.others.size} 人）</div><div id="socList"></div>`;
+    h += `<div class="hd">聊天紀錄</div><div class="clog" id="socLog"></div>
+      <div class="acts2"><button class="sb" data-do="chatOpen">${cloudOn() ? '聊天' : '聊天（需登入）'}<span class="keyOnly">（T）</span></button></div>`;
+    return [h, '<span>點擊玩家名稱或畫面中的玩家可查看角色資訊</span>'];
+  },
   menu() {   // 觸控裝置的選單：開啟所有視窗
-    const items = [['skill', '技能'], ['bag', '背包'], ['equip', '裝備'], ['quest', '任務'], ['account', '帳號'], ['rank', '排行榜'], ['settings', '設定'], ['help', '說明']];
+    const items = [['skill', '技能'], ['bag', '背包'], ['equip', '裝備'], ['quest', '任務'], ['account', '帳號'], ['rank', '排行榜'], ['social', '社群'], ['settings', '設定'], ['help', '說明']];
     const dot = { skill: !!hudCache.mbSkilldot, quest: !!hudCache.mbQuestdot, account: !!CLOUD.pending };
     return ['<div class="mgrid">' + items.map(([id, nm]) => `<button class="mitem ${dot[id] ? 'dot' : ''}" data-do="${id === 'help' ? 'help' : 'tab'}" data-a="${id}">${nm}</button>`).join('') + '</div>', ''];
   },
 };
+// 社群視窗：玩家名稱與聊天內容一律用 DOM API ＋ textContent 填入（不經過 innerHTML）
+function fillSocial() {
+  const list = $('socList'), log = $('socLog');
+  if (!list || !log) return;
+  const mk = (tag, cls, text, parent) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; parent.appendChild(n); return n; };
+  const p = G.player, others = [...NET.others.values()].sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x));
+  if (!others.length) mk('div', 'det dim', NET.st === 'ok' ? '這個頻道目前沒有其他玩家。' : '尚未連線。', list);
+  for (const R of others) {
+    const row = mk('div', 'row', null, list);
+    row.dataset.do = 'card'; row.dataset.a = String(R.id);
+    const g = mk('div', 'grow', null, row);
+    mk('div', 't', R.name, g);
+    mk('div', 'd dim', `Lv.${R.lv}・${JOBS[R.job].name}・${areaOf(R.x)}`, g);
+  }
+  if (!NET.log.length) mk('div', 'sys', '還沒有聊天訊息。', log);
+  for (const e of NET.log) {
+    if (e.sys) { mk('div', 'sys', '※ ' + e.text, log); continue; }
+    const d = mk('div', (e.me ? 'me' : '') + (e.hist ? ' old' : ''), null, log);
+    mk('b', null, e.name + '：', d);
+    d.appendChild(document.createTextNode(e.text));
+  }
+  log.scrollTop = log.scrollHeight;
+}
 // 遊戲進行中開著視窗時，內容（背包、任務進度、能力值…）有變化就重新繪製
 function refreshWin() {
   const p = G.player, w = G.ui.win;
@@ -3912,12 +4508,13 @@ function renderWin(resetScroll) {
   let head = '<div class="wh">';
   if (w === 'account' || w === 'rank') head += CLOUD_TABS.map(([id, nm, k]) => `<button class="tab ${w === id ? 'on' : ''}" data-do="tab" data-a="${id}">${nm}<small>${k}</small></button>`).join('');
   else if (w === 'shop') head += '<span class="wt">葛蘭的商店</span>' + [['buy', '購買'], ['sell', '賣出']].map(([t, nm]) => `<button class="tab ${G.ui.shopTab === t ? 'on' : ''}" data-do="stab" data-a="${t}">${nm}</button>`).join('');
-  else if (w === 'settings' || w === 'menu') head += `<span class="wt">${w === 'menu' ? '選單' : '設定'}</span>` + (isTouch && w === 'settings' ? '<button class="tab" data-do="tab" data-a="menu">◀ 選單</button>' : '');
+  else if (w === 'settings' || w === 'menu' || w === 'social') head += `<span class="wt">${{ menu: '選單', settings: '設定', social: '社群' }[w]}</span>` + (isTouch && w !== 'menu' ? '<button class="tab" data-do="tab" data-a="menu">◀ 選單</button>' : '');
   else head += WIN_TABS.map(([id, nm, k]) => `<button class="tab ${w === id ? 'on' : ''}" data-do="tab" data-a="${id}">${nm}<small>${k}</small></button>`).join('');
   head += '<button class="xbtn" data-do="close" aria-label="關閉視窗">✕</button></div>';
   const [body, foot] = WIN[w]();
   el.innerHTML = head + `<div class="wb" id="wb">${body}</div>` + (foot ? `<div class="wf">${foot}</div>` : '');
   el.classList.add('show');
+  if (w === 'social') { fillSocial(); NET.winSig = netWinSig(); }
   $('wb').scrollTop = top;
   if ($('acPass')) $('acPass').value = CLOUD.form.pass;   // 密碼不寫進 HTML，重繪後用程式填回
   if (focusId && $(focusId) && !$(focusId).disabled) $(focusId).focus({ preventScroll: true });
@@ -3959,12 +4556,20 @@ function uiAction(act, a, b) {
     case 'setMute': SETTINGS.mute = !SETTINGS.mute; saveSettings(); applyVolume(); updateMuteBtn(); SFX.click(); break;
     case 'setRing': SETTINGS.joyRing = !SETTINGS.joyRing; saveSettings(); joyDraw(); SFX.click(); break;
     case 'help': closeWin(); openHint(); return;
+    case 'chan': if (NET.st === 'ok' && +a !== NET.ch && !NET.want) { NET.want = clamp(+a || 1, 1, NET.nch); SFX.click(); netWake(); } break;
+    case 'emote': doEmote(+a); return;
+    case 'chatOpen': openChat(); return;
+    case 'card': NET.card = +a; SFX.click(); renderCard(); return;
+    case 'setOthers': SETTINGS.others = !SETTINGS.others; saveSettings(); if (!SETTINGS.others) { NET.card = 0; renderCard(); } SFX.click(); break;
+    case 'setBubbles': SETTINGS.bubbles = !SETTINGS.bubbles; saveSettings(); SFX.click(); break;
   }
   renderWin();
 }
 function winKey(e) {
   const w = G.ui.win, c = e.code, p = G.player;
   if (c === 'Escape') { closeWin(); return true; }
+  if (c === 'KeyT' && !e.ctrlKey && !e.metaKey && !e.altKey) { if (!e.repeat) openChat(); return true; }
+  if (EMOTE_KEYS[c] !== undefined) { if (!e.repeat) doEmote(EMOTE_KEYS[c]); return true; }
   if (MENU_KEYS[c]) {
     if (!e.repeat) { if (w === MENU_KEYS[c]) closeWin(); else { G.ui.win = MENU_KEYS[c]; G.ui.confirm = null; SFX.click(); renderWin(true); } }
     return true;
@@ -4093,6 +4698,8 @@ function setupUI() {
     if (t.id === 'setPause') { t.blur(); uiAction('setPause'); }
     else if (t.id === 'setMute') { t.blur(); uiAction('setMute'); }
     else if (t.id === 'setRing') { t.blur(); uiAction('setRing'); }
+    else if (t.id === 'setOthers') { t.blur(); uiAction('setOthers'); }
+    else if (t.id === 'setBubbles') { t.blur(); uiAction('setBubbles'); }
     else if (t.id === 'setTA') { saveSettings(); t.blur(); }
     else if (t.id === 'setVol') { saveSettings(); t.blur(); SFX.coin(); }   // 放開滑桿時播放試聽音效
   });
@@ -4122,13 +4729,26 @@ function setupUI() {
     if (b) { if (b.dataset.opt === 'next') dlgNext(); else chooseOpt(+b.dataset.opt); }
     else if (d.i < d.pages.length - 1 || !d.opts) dlgNext();
   });
-  // 點擊畫面中的 NPC 對話
+  // 點擊畫面中的 NPC 對話；點擊其他玩家查看資訊；點擊小地圖下方的頻道資訊開啟社群視窗
   cv.addEventListener('pointerdown', e => {
     initAudio();
     const p = G.player;
-    if (G.hint || uiBusy() || G.deathShown || !p || p.dead) return;
-    npcTap(e, false);
+    if (G.hint || G.deathShown || !p) return;
+    if (netHudTap(e) || uiBusy() || playerTap(e)) return;
+    if (!p.dead) npcTap(e, false);
   });
+  // 聊天列：Enter 送出（輸入法選字中的 Enter 不算）、Esc 關閉；表情按鈕
+  const ci = $('chatIn');
+  ci.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); chatSend(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeChat(); }
+  });
+  ci.addEventListener('keyup', e => e.stopPropagation());
+  $('chatSend').addEventListener('click', e => { e.stopPropagation(); if (cloudOn()) chatSend(); else { chatHint('登入後才能聊天（按 L 登入）'); SFX.deny(); } });
+  $('chatX').addEventListener('click', e => { e.stopPropagation(); closeChat(); });
+  $('emoRow').innerHTML = EMOTES.map((n, i) => `<button class="emb" data-emo="${i}" title="${n}" aria-label="${n}"><img src="${itemIcon('emo:' + i).url}" alt=""></button>`).join('');
+  $('emoRow').addEventListener('click', e => { const b = e.target.closest('[data-emo]'); if (b) { e.stopPropagation(); initAudio(); doEmote(+b.dataset.emo); b.blur(); } });
   updateMuteBtn();
   setupTouch();
   addEventListener('pointerdown', initAudio, true);   // 第一次點擊／觸控時建立（或恢復）AudioContext
@@ -4155,6 +4775,7 @@ function frame(now) {
     while (acc >= STEP && n < 24) { update(STEP); acc -= STEP; n++; for (const k in pressed) pressed[k] = false; }
     if (n >= 24) acc = 0;
   } else { acc = 0; for (const k in pressed) pressed[k] = false; }
+  netFrame(dt);
   render();
   updateHud();
   if (G.ui.win && !stop) { G.winT -= dt; if (G.winT <= 0) { G.winT = 0.4; refreshWin(); } }
@@ -4182,6 +4803,7 @@ function start(data) {
   updateCamera(0, true);
   if (data.hintSeen) { G.hint = false; $('hint').classList.remove('show'); G.introShown = true; }
   cloudInit();   // 已登入時在背景比對雲端存檔（失敗也不影響遊戲）
+  netInit();     // 多人同步（背景輪詢；連不上時安靜地重試）
   requestAnimationFrame(frame);
 }
 window.claude?.hot?.snapshot?.(() => saveState());
