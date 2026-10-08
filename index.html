@@ -117,6 +117,7 @@ body.touch .tab small{display:none}
 .sb{font:inherit;font-weight:800;font-size:12px;padding:4px 9px;border-radius:6px;border:1px solid #2b1d07;background:linear-gradient(#ffe08a,#e6a93a);color:#2b1d07;cursor:pointer;white-space:nowrap;flex:none}
 .sb:disabled{background:#323d37;color:#76857c;border-color:#26302b;cursor:default}
 .sb.alt{background:#2f4337;color:#f1ead8;border-color:#6f917b}
+.sb.kb{box-shadow:0 0 0 2px #fff6d8,0 0 8px #ffd56b}
 .sb.red{background:#8a3b3b;color:#fff3ea;border-color:#3a1515}
 .binds{display:flex;gap:3px;margin-top:4px;align-items:center;font-size:11px;color:#9fbfae}
 .bk{font:inherit;font-size:11px;font-weight:900;min-width:24px;height:22px;border-radius:5px;border:1px solid #5d7e69;background:#1a241f;color:#bfd3c4;cursor:pointer;padding:0 4px}
@@ -858,7 +859,7 @@ const G = {
   hazards: [],   // Boss 的攻擊判定（震波、霧彈）
   cam: { x: 0, y: 0 }, shake: 0, time: 0, lvlFx: 0, banner: null, intro: 0, area: '', areaT: 0,
   hint: true, deathShown: false, saveT: 0, started: false, savedAt: 0, winT: 0, winSig: '',
-  ui: { win: null, dlg: null, sel: { skill: 0, bag: 0, equip: 0, eqc: -1, quest: 0, shop: 0 }, shopTab: 'buy', skTab: 1, confirm: null },
+  ui: { win: null, dlg: null, sel: { skill: 0, bag: 0, equip: 0, eqc: -1, quest: 0, shop: 0 }, shopTab: 'buy', shopQty: 1, skTab: 1, confirm: null },
 };
 // 重設地圖上的動態物件（讀取雲端存檔、重置進度時使用）
 function resetWorld() { G.drops = []; G.projs = []; G.fxs = []; G.timers = []; G.hazards = []; G.monsters = SPAWNS.map(makeMonster); }
@@ -4201,7 +4202,7 @@ function recordCard() {
 // 按鍵說明（設定視窗）
 const KEY_HELP = [
   ['← →', '移動'], ['↑ ↓', '攀爬繩索／趴下'], ['Alt / 空白鍵', '跳躍（↓ + 跳躍：從平台跳下）'], ['Ctrl / Z', '普通攻擊'],
-  ['X / A / S / D', '技能快捷鍵'], ['1 / 2', '紅色／藍色藥水（按住連續使用）'], ['Shift + Enter', '商店一次買 10 瓶藥水'], ['↑ / Enter', '和 NPC 對話'],
+  ['X / A / S / D', '技能快捷鍵'], ['1 / 2', '紅色／藍色藥水（按住連續使用）'], ['Shift + Enter', '商店一次買 10 瓶藥水（也可用 ↓ 選到 ×10 再按 Enter）'], ['↑ / Enter', '和 NPC 對話'],
   ['K / I / E / Q', '技能／背包／裝備／任務'], ['L / R', '帳號／排行榜'], ['O / Esc', '設定（沒有開視窗時按 Esc）'],
   ['T', '聊天（Enter 送出・Esc 取消；需登入）'], ['3～8', '表情（開心／愛心／哭哭／生氣／驚訝／音符）'], ['C', '社群（頻道、同頻道玩家、聊天紀錄）'], ['滑鼠點擊其他玩家', '查看角色資訊'],
 ];
@@ -4357,13 +4358,14 @@ const WIN = {
     let h = '';
     if (G.ui.shopTab === 'buy') {
       const sel = G.ui.sel.shop = clamp(G.ui.sel.shop, 0, SHOP_LIST.length - 1);
+      if (!SHOP_LIST[sel].startsWith('pot:')) G.ui.shopQty = 1;
       SHOP_LIST.forEach((key, i) => {
-        const pot = key.startsWith('pot:'), price = shopPrice(key);
+        const pot = key.startsWith('pot:'), price = shopPrice(key), kb = n => i === sel && G.ui.shopQty === n ? ' kb' : '';
         let name, d, bad = '';
         if (pot) { const k = key.slice(4); name = POTION[k].name; d = `回復 ${POTION[k].heal} ${k.toUpperCase()}・持有 ${p.pots[k]}`; }
         else { const B = ITEMS[key]; name = B.name; bad = equipBlock(p, shopItem(key)); d = `${SLOTS[B.slot]}・Lv.${B.lv}・${B.jobs ? jobsText(B.jobs) : '全職業'}・${STAT_ORDER.filter(k => B.st[k]).map(k => STAT_NAMES[k] + fmtStat(k, B.st[k])).join(' ')}`; }
         h += `<div class="row ${i === sel ? 'sel' : ''}" data-do="sel" data-a="${i}"><img src="${itemIcon(key).url}" alt=""><div class="grow"><div class="t">${name}</div><div class="d ${bad ? 'bad' : ''}">${d}</div><div class="d" style="color:#ffd56b">${price} 金幣</div></div>
-          <div style="display:flex;flex-direction:column;gap:4px"><button class="sb" data-do="buy" data-a="${key}" data-b="1" ${p.coins < price ? 'disabled' : ''}>購買</button>${pot ? `<button class="sb" data-do="buy" data-a="${key}" data-b="10" ${p.coins < price * 10 ? 'disabled' : ''}>×10</button>` : ''}</div></div>`;
+          <div style="display:flex;flex-direction:column;gap:4px"><button class="sb${kb(1)}" data-do="buy" data-a="${key}" data-b="1" ${p.coins < price ? 'disabled' : ''}>購買</button>${pot ? `<button class="sb${kb(10)}" data-do="buy" data-a="${key}" data-b="10" ${p.coins < price * 10 ? 'disabled' : ''}>×10</button>` : ''}</div></div>`;
       });
     } else {
       const sel = G.ui.sel.shop = clamp(G.ui.sel.shop, 0, Math.max(0, p.bag.length - 1));
@@ -4375,7 +4377,7 @@ const WIN = {
           <button class="sb ${cf ? 'red' : ''}" data-do="sell" data-a="${i}">${cf ? '確定賣出？' : '賣出'}</button></div>`;
       });
     }
-    return [h, `<span>金幣 <b>${p.coins.toLocaleString()}</b></span><span>背包 ${p.bag.length} / ${BAG_MAX}</span><span class="keyOnly">←→ 切換購買／賣出・↑↓ 選擇・Enter 確認</span>`];
+    return [h, `<span>金幣 <b>${p.coins.toLocaleString()}</b></span><span>背包 ${p.bag.length} / ${BAG_MAX}</span><span class="keyOnly">←→ 切換購買／賣出・↑↓ 選擇（藥水可選到 ×10）・Enter 確認</span>`];
   },
   account() {
     if (!API.ready) return [CLOUD_NOT_READY + recordCard(), ''];
@@ -4550,8 +4552,8 @@ function uiAction(act, a, b) {
   switch (act) {
     case 'close': closeWin(); return;
     case 'tab': G.ui.win = a; SFX.click(); renderWin(true); return;
-    case 'stab': G.ui.shopTab = a; G.ui.sel.shop = 0; SFX.click(); renderWin(true); return;
-    case 'sel': G.ui.sel[G.ui.win] = +a; G.ui.confirm = null; if (G.ui.win === 'equip') G.ui.sel.eqc = -1; break;
+    case 'stab': G.ui.shopTab = a; G.ui.sel.shop = 0; G.ui.shopQty = 1; SFX.click(); renderWin(true); return;
+    case 'sel': G.ui.sel[G.ui.win] = +a; G.ui.confirm = null; if (G.ui.win === 'equip') G.ui.sel.eqc = -1; G.ui.shopQty = 1; break;
     case 'eqc': G.ui.sel.eqc = +a; break;
     case 'learn': learnSkill(a); break;
     case 'bind': bindSkill(a, +b); break;
@@ -4630,8 +4632,17 @@ function winKey(e) {
     if (enter) { const Q = QUESTS.filter(qActive)[G.ui.sel.quest]; if (Q) uiAction('track', Q.id); return true; }
   } else if (w === 'shop') {
     if (c === 'ArrowLeft' || c === 'ArrowRight') { uiAction('stab', G.ui.shopTab === 'buy' ? 'sell' : 'buy'); return true; }
-    if (vert) { G.ui.sel.shop = Math.max(0, G.ui.sel.shop + nav); renderWin(); return true; }
-    if (enter) { if (G.ui.shopTab === 'buy') { const key = SHOP_LIST[G.ui.sel.shop]; uiAction('buy', key, e.shiftKey && key.startsWith('pot:') ? '10' : '1'); } else uiAction('sell', String(G.ui.sel.shop)); return true; }
+    if (vert) {
+      const isPot = i => (SHOP_LIST[i] || '').startsWith('pot:');
+      if (G.ui.shopTab === 'buy' && nav > 0 && G.ui.shopQty === 1 && isPot(G.ui.sel.shop)) G.ui.shopQty = 10;          // 藥水列：購買 → ×10
+      else if (G.ui.shopTab === 'buy' && nav < 0 && G.ui.shopQty === 10) G.ui.shopQty = 1;                              // ×10 → 購買
+      else {
+        const i = clamp(G.ui.sel.shop + nav, 0, (G.ui.shopTab === 'buy' ? SHOP_LIST.length : Math.max(1, p.bag.length)) - 1);
+        if (i !== G.ui.sel.shop) { G.ui.sel.shop = i; G.ui.shopQty = nav < 0 && G.ui.shopTab === 'buy' && isPot(i) ? 10 : 1; }   // 往上進入藥水列時先停在 ×10
+      }
+      renderWin(); return true;
+    }
+    if (enter) { if (G.ui.shopTab === 'buy') { const key = SHOP_LIST[G.ui.sel.shop]; uiAction('buy', key, key.startsWith('pot:') && (e.shiftKey || G.ui.shopQty === 10) ? '10' : '1'); } else uiAction('sell', String(G.ui.sel.shop)); return true; }
   } else if (w === 'rank') {
     if (c === 'ArrowLeft' || c === 'ArrowRight') {
       const i = RANK_BY.findIndex(r => r[0] === CLOUD.rank.by);
