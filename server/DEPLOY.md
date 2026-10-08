@@ -33,7 +33,7 @@ mkdir -p ~/mistwood-data
 在同一個 Bash console 輸入：
 
 ```bash
-mkvirtualenv mistwood-venv --python=/usr/bin/python3.11
+mkvirtualenv mistwood-venv --python=/usr/bin/python3.10
 pip install -r ~/mistwood/server/requirements.txt
 ```
 
@@ -55,7 +55,7 @@ python -m pytest -q
 1. 點上方的 **Web** → **Add a new web app**。
 2. 網域選 `peoplepop.pythonanywhere.com` → **Next**。
 3. 框架選 **Manual configuration**（不要選「Flask」，那個會幫你產生範例程式）。
-4. Python 版本選 **Python 3.11**（要和步驟 2 的版本一樣）→ **Next**。
+4. Python 版本選 **Python 3.10**（要和步驟 2 的版本一樣；部分帳號的系統映像中 3.11 的 venv 會出現 `_posixsubprocess` 錯誤，故使用 3.10）→ **Next**。
 5. 建立完成後，在同一頁往下設定：
 
 | 區塊 | 欄位 | 填入 |
