@@ -238,7 +238,7 @@ body.touch .menus{display:none}
     <tr><td>Alt / 空白鍵</td><td>跳躍（按住 ↓ + 跳躍：從平台跳下）</td></tr>
     <tr><td>Ctrl / Z</td><td>普通攻擊（依職業：揮砍／射箭／魔法彈）</td></tr>
     <tr><td>X / A / S / D</td><td>技能快捷鍵（在技能視窗中綁定）</td></tr>
-    <tr><td>1 / 2</td><td>使用紅色藥水 / 藍色藥水</td></tr>
+    <tr><td>1 / 2</td><td>使用紅色藥水 / 藍色藥水（按住不放連續使用）</td></tr>
     <tr><td>↑ / Enter</td><td>靠近 NPC 時對話（也可直接點擊 NPC）</td></tr>
     <tr><td>K / I / E / Q</td><td>技能 / 背包 / 裝備 / 任務視窗（Esc 關閉）</td></tr>
     <tr><td>L / R</td><td>帳號（雲端存檔）/ 排行榜</td></tr>
@@ -1078,9 +1078,10 @@ function respawn() {
   burst(p.x, p.y - 30, 16, ['#ffffff', '#bfe3ff'], 160, 'star', -60);
   persist();
 }
-function usePotion(kind) {
+function usePotion(kind, hold) {   // hold：按住不放的連續使用，沒藥水或已滿時不再重複提示
   const p = G.player, P = POTION[kind];
   if (p.potCD > 0 || p.dead) return;
+  if (hold && (p.pots[kind] <= 0 || (kind === 'hp' ? p.hp >= p.maxHp : p.mp >= p.maxMp))) return;
   if (p.pots[kind] <= 0) { ftext(p.x, p.y - 70, `沒有${P.name}`, '#d8cfb4', 15, '#111', 0.9); SFX.deny(); return; }
   const cur = kind === 'hp' ? p.hp : p.mp, max = kind === 'hp' ? p.maxHp : p.maxMp;
   if (cur >= max) { ftext(p.x, p.y - 70, kind === 'hp' ? 'HP 已滿' : 'MP 已滿', '#d8cfb4', 15, '#111', 0.9); SFX.deny(); return; }
@@ -1548,8 +1549,8 @@ function updatePlayer(dt) {
     return;
   }
   const dir = (held.right ? 1 : 0) - (held.left ? 1 : 0);
-  if (pressed.hp) usePotion('hp');
-  if (pressed.mp) usePotion('mp');
+  if (held.hp || pressed.hp) usePotion('hp', !pressed.hp);   // 按住不放：每次冷卻結束就再喝一瓶
+  if (held.mp || pressed.mp) usePotion('mp', !pressed.mp);
   // 靠近 NPC 時按 ↑ 對話
   if (pressed.up && !p.rope && p.onGround && p.hurtT <= 0 && p.atkT <= 0) { const n = nearNpc(); if (n) { talkTo(n); return; } }
   if (p.spin) {
@@ -1570,7 +1571,15 @@ function updatePlayer(dt) {
       p.rope = null; p.ropeCD = 0.3; p.vx = dir * 170; p.vy = -380; p.face = dir; SFX.jump();
     } else if (p.y <= r.top) { p.y = r.top; p.rope = null; p.ropeCD = 0.2; p.vy = 0; }
     else if (p.y >= r.bottom) { p.y = r.bottom; p.rope = null; p.ropeCD = 0.2; p.vy = 0; }
-    if (p.rope) return;
+    if (p.rope) {
+      // 繩索上只能施放增益技能（不播放施法動作，免得攻擊計時卡在繩索上）
+      for (let i = 0; i < 4; i++) if (pressed['sk' + (i + 1)]) {
+        const id = p.keys[i];
+        if (id && SKILLS[id].type === 'buff') { castSkill(id); p.atkT = 0; p.atkCD = 0; }
+        break;
+      }
+      return;
+    }
   }
   if (p.ropeCD <= 0 && p.hurtT <= 0 && p.atkT <= 0) {
     let r = null;
@@ -3645,7 +3654,7 @@ function recordCard() {
 // 按鍵說明（設定視窗）
 const KEY_HELP = [
   ['← →', '移動'], ['↑ ↓', '攀爬繩索／趴下'], ['Alt / 空白鍵', '跳躍（↓ + 跳躍：從平台跳下）'], ['Ctrl / Z', '普通攻擊'],
-  ['X / A / S / D', '技能快捷鍵'], ['1 / 2', '紅色／藍色藥水'], ['↑ / Enter', '和 NPC 對話'],
+  ['X / A / S / D', '技能快捷鍵'], ['1 / 2', '紅色／藍色藥水（按住連續使用）'], ['Shift + Enter', '商店一次買 10 瓶藥水'], ['↑ / Enter', '和 NPC 對話'],
   ['K / I / E / Q', '技能／背包／裝備／任務'], ['L / R', '帳號／排行榜'], ['O / Esc', '設定（沒有開視窗時按 Esc）'],
 ];
 
@@ -3989,7 +3998,7 @@ function winKey(e) {
   } else if (w === 'shop') {
     if (c === 'ArrowLeft' || c === 'ArrowRight') { uiAction('stab', G.ui.shopTab === 'buy' ? 'sell' : 'buy'); return true; }
     if (vert) { G.ui.sel.shop = Math.max(0, G.ui.sel.shop + nav); renderWin(); return true; }
-    if (enter) { if (G.ui.shopTab === 'buy') uiAction('buy', SHOP_LIST[G.ui.sel.shop], '1'); else uiAction('sell', String(G.ui.sel.shop)); return true; }
+    if (enter) { if (G.ui.shopTab === 'buy') { const key = SHOP_LIST[G.ui.sel.shop]; uiAction('buy', key, e.shiftKey && key.startsWith('pot:') ? '10' : '1'); } else uiAction('sell', String(G.ui.sel.shop)); return true; }
   } else if (w === 'rank') {
     if (c === 'ArrowLeft' || c === 'ArrowRight') {
       const i = RANK_BY.findIndex(r => r[0] === CLOUD.rank.by);
