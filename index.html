@@ -133,6 +133,17 @@ body.touch .tab small{display:none}
 .dlg .opts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;justify-content:flex-end}
 .dlg .opts .sb.sel{outline:2px solid #fff;outline-offset:1px}
 .dlg .more{font-size:11px;color:#9fbfae;text-align:right}
+.acct label{display:block;font-weight:800;font-size:12px;color:#bfd3c4;margin:8px 0 0}
+.inp{display:block;width:100%;margin-top:3px;font:inherit;font-size:16px;padding:7px 9px;border-radius:7px;border:1px solid #6f917b;background:#0f1612;color:#f1ead8;-webkit-user-select:text;user-select:text;outline:none}
+.inp:focus{border-color:#ffe08a;box-shadow:0 0 0 2px rgba(255,224,138,.25)}
+.msg{margin-top:8px;font-size:12.5px;min-height:1em}
+.cmp2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.cmp2 .det{margin-top:6px}
+.rtabs{display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap}
+.row.me{border-color:#6ab8ff;background:rgba(106,184,255,.14)}
+.rk{font-weight:900;min-width:30px;text-align:center;color:#ffe08a;font-size:15px;align-self:center;flex:none}
+.val{font-weight:900;align-self:center;white-space:nowrap;color:#ffe9a8}
+@media (max-width:420px){.cmp2{grid-template-columns:1fr}}
 @media (max-width:640px),(max-height:500px){
   .win{position:fixed;top:8px;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:auto;max-height:none}
   .dlg{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));transform:none;width:auto}
@@ -169,6 +180,7 @@ body.touch .tab small{display:none}
           <button class="mbtn" data-win="bag" id="mbBag">背包<small>I</small></button>
           <button class="mbtn" data-win="equip" id="mbEquip">裝備<small>E</small></button>
           <button class="mbtn" data-win="quest" id="mbQuest">任務<small>Q</small></button>
+          <button class="mbtn" data-win="account" id="mbAcct">帳號<small>L</small></button>
         </div>
       </div>
       <div id="expbar"><i id="expF"></i><span id="expT">EXP 0 / 15（0.00%）</span></div>
@@ -190,7 +202,7 @@ body.touch .tab small{display:none}
 
 <div id="hint" class="ov show"><div class="card">
   <h1>晨霧森林</h1>
-  <p class="sub">原創 2D 橫向捲軸動作 RPG・第二階段原型</p>
+  <p class="sub">原創 2D 橫向捲軸動作 RPG・第三階段原型</p>
   <table class="keys keyOnly">
     <tr><td>← →</td><td>移動</td></tr>
     <tr><td>↑ ↓</td><td>攀爬繩索（附近沒有繩索時，按 ↓ 趴下）</td></tr>
@@ -200,9 +212,11 @@ body.touch .tab small{display:none}
     <tr><td>1 / 2</td><td>使用紅色藥水 / 藍色藥水</td></tr>
     <tr><td>↑ / Enter</td><td>靠近 NPC 時對話（也可直接點擊 NPC）</td></tr>
     <tr><td>K / I / E / Q</td><td>技能 / 背包 / 裝備 / 任務視窗（Esc 關閉）</td></tr>
+    <tr><td>L / R</td><td>帳號（雲端存檔）/ 排行榜</td></tr>
   </table>
-  <div class="touchOnly note">使用畫面下方按鈕操作：方向鍵移動與攀爬，沒有繩索時按 ▼ 趴下，按住 ▼ 再按「跳躍」可從平台跳下。靠近 NPC 按 ▲ 或點擊 NPC 對話；HUD 的「技能／背包／裝備／任務」按鈕開啟視窗。</div>
+  <div class="touchOnly note">使用畫面下方按鈕操作：方向鍵移動與攀爬，沒有繩索時按 ▼ 趴下，按住 ▼ 再按「跳躍」可從平台跳下。靠近 NPC 按 ▲ 或點擊 NPC 對話；HUD 的「技能／背包／裝備／任務／帳號」按鈕開啟視窗。</div>
   <p class="note">怪物掉落的金幣、藥水與裝備，<b>碰觸即自動拾取</b>。到 Lv.10 可找村口的雷歐轉職。開啟視窗或對話時遊戲會暫停。</p>
+  <p class="note">在「帳號」視窗註冊／登入後，進度會自動備份到雲端，並可參加等級、擊殺數、金幣排行榜。不登入也能正常遊玩（進度存在這台裝置）。</p>
   <button class="btn" id="startBtn">開始冒險</button>
   <p class="tip keyOnly">按任意鍵或點擊開始</p>
   <div><button class="link" id="resetBtn">重置進度</button></div>
@@ -216,6 +230,21 @@ body.touch .tab small{display:none}
 
 <script>
 'use strict';
+// ================= 雲端設定（部署後端後修改這裡） =================
+// 1. 把 PA_USERNAME 改成你的 PythonAnywhere 帳號名稱（例如 'peoplepop'）
+// 2. EU 區帳號請把 PA_DOMAIN 改成 'eu.pythonanywhere.com'
+// 在 localhost / 127.0.0.1 開啟時，會自動改用本機後端 http://127.0.0.1:5000
+const PA_USERNAME = 'peoplepop';
+const PA_DOMAIN = 'pythonanywhere.com';
+const API_LOCAL = 'http://127.0.0.1:5000';
+function apiConfig(host) {
+  const local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+  const named = PA_USERNAME !== 'YOUR_PA_USERNAME' && /^[A-Za-z0-9_-]+$/.test(PA_USERNAME);
+  return { base: local ? API_LOCAL : `https://${PA_USERNAME}.${PA_DOMAIN}`, ready: local || named };
+}
+const API = apiConfig(location.hostname);   // API.ready = false 時雲端功能停用，只用本機存檔
+const API_BASE = API.base;
+
 // ================= 設定與資料 =================
 const WORLD_W = 4800, WORLD_H = 760, GROUND_Y = 700, TOWN_X = 190, DEEP_X = 3600;
 const STEP = 1 / 120, GRAV = 2200;
@@ -457,10 +486,16 @@ const KEYMAP = {
   KeyX: 'sk1', KeyA: 'sk2', KeyS: 'sk3', KeyD: 'sk4',
   Digit1: 'hp', Digit2: 'mp', Numpad1: 'hp', Numpad2: 'mp',
 };
-const MENU_KEYS = { KeyK: 'skill', KeyI: 'bag', KeyE: 'equip', KeyQ: 'quest' };
+const MENU_KEYS = { KeyK: 'skill', KeyI: 'bag', KeyE: 'equip', KeyQ: 'quest', KeyL: 'account', KeyR: 'rank' };
 function setAction(a, on) { if (on && !held[a]) pressed[a] = true; held[a] = on; }
 function releaseAll() { for (const k in held) held[k] = false; for (const k in pressed) pressed[k] = false; document.querySelectorAll('.tb.on').forEach(b => b.classList.remove('on')); }
+// 焦點在輸入框時，按鍵只用來打字，不觸發任何遊戲操作
+const isTyping = t => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 addEventListener('keydown', e => {
+  if (isTyping(e.target)) {
+    if (e.code === 'Escape') { e.preventDefault(); e.target.blur(); closeWin(); }
+    return;
+  }
   initAudio();
   if (G.hint) { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); closeHint(); } return; }
   if (G.deathShown) { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); respawn(); } return; }
@@ -471,7 +506,7 @@ addEventListener('keydown', e => {
   const a = KEYMAP[e.code];
   if (a) { e.preventDefault(); setAction(a, true); }
 });
-addEventListener('keyup', e => { const a = KEYMAP[e.code]; if (a) { e.preventDefault(); setAction(a, false); } });
+addEventListener('keyup', e => { if (isTyping(e.target)) return; const a = KEYMAP[e.code]; if (a) { e.preventDefault(); setAction(a, false); } });
 addEventListener('blur', releaseAll);
 function setupTouch() {
   document.querySelectorAll('[data-act]').forEach(b => {
@@ -491,7 +526,7 @@ function setupTouch() {
 const G = {
   player: null, monsters: [], drops: [], projs: [], parts: [], texts: [], toasts: [], fxs: [], timers: [],
   cam: { x: 0, y: 0 }, shake: 0, time: 0, lvlFx: 0, banner: null, intro: 0,
-  hint: true, deathShown: false, saveT: 0, started: false,
+  hint: true, deathShown: false, saveT: 0, started: false, savedAt: 0,
   ui: { win: null, dlg: null, sel: { skill: 0, bag: 0, equip: 0, quest: 0, shop: 0 }, shopTab: 'buy', confirm: null },
 };
 
@@ -541,6 +576,7 @@ function makePlayer(d) {
     anim: 0, dead: false, deadT: 0, expLoss: 0, prone: false,
     job: JOBS[d.job] ? d.job : 'novice', sp: 0, skills: {}, keys: [null, null, null, null], cds: {}, buffs: {}, spin: null,
     equip: {}, bag: [], etc: {}, quests: {},
+    stats: { kills: Math.max(0, Math.floor(num(d.stats && d.stats.kills, 0))) },   // 累計擊殺數（舊存檔沒有時從 0 開始）
   };
   // 技能：預設風刃斬 Lv.1；技能點未存時依等級補發（舊存檔遷移）
   if (d.skills && typeof d.skills === 'object') for (const id in d.skills) { if (SKILLS[id]) p.skills[id] = clamp(Math.floor(num(d.skills[id], 0)), 0, SKILLS[id].max); }
@@ -652,6 +688,7 @@ function killMonster(m) {
   if (Math.random() < d.drops.mp) spawnDrop('mp', m.x, m.y - 10, 1);
   if (d.equip && Math.random() < d.equip[0]) spawnDrop('equip', m.x, m.y - 10, rollItem(pick(d.equip[1])));
   if (d.etc && questNeeds(d.etc[0]) && Math.random() < d.etc[1]) spawnDrop('etc', m.x, m.y - 10, d.etc[0]);
+  G.player.stats.kills++;
   questKill(m.type);
   gainExp(d.exp);
 }
@@ -681,6 +718,7 @@ function levelUp() {
   toast(`獲得技能點 +${SP_PER_LV}（按 K 分配）`, '#ffd56b');
   if (p.lv === JOB_LV && p.job === 'novice') toast('已達 Lv.10！可以到村口找轉職導師雷歐轉職', '#ffe066');
   for (const Q of QUESTS) if (Q.type === 'level' && qActive(Q) && p.lv === Q.n) toast(`任務「${Q.name}」目標達成，回去找 NPC 回報吧`, '#9ff0c8');
+  persist(true);   // 升級時立即同步雲端
   burst(p.x, p.y - 30, 30, ['#fff7c2', '#ffd23e', '#ffffff'], 300, 'star', -80);
   SFX.level(); addShake(4);
   persist();
@@ -995,7 +1033,7 @@ function completeQuest(Q, job) {
   if (!r.job) G.banner = { title: '任務完成！', sub: `「${Q.name}」`, t: 0, life: 2.4 };
   SFX.quest();
   if (r.exp && !r.job) gainExp(r.exp);
-  persist();
+  persist(true);   // 完成任務／轉職時立即同步雲端
 }
 function changeJob(j) {
   const p = G.player;
@@ -2367,6 +2405,7 @@ function updateHud() {
   }
   setCls('mbSkill', 'dot', p.sp > 0 && Object.keys(SKILLS).some(id => !learnBlock(p, id)));
   setCls('mbQuest', 'dot', QUESTS.some(qReady));
+  setCls('mbAcct', 'dot', !!CLOUD.pending);
   setCls('slotHp', 'lack', p.pots.hp <= 0); setCls('slotMp', 'lack', p.pots.mp <= 0);
 }
 
@@ -2412,14 +2451,22 @@ function saveState() {
   if (!p) return {};
   return {
     v: 2,
+    savedAt: Date.now(),   // 存檔時間（毫秒），用來比對本機與雲端哪一份比較新
     player: {
       lv: p.lv, exp: p.exp, hp: p.dead ? 0 : p.hp, mp: p.mp, coins: p.coins, pots: { hp: p.pots.hp, mp: p.pots.mp }, x: p.x, y: p.y, face: p.face,
       job: p.job, sp: p.sp, skills: p.skills, keys: p.keys, equip: p.equip, bag: p.bag, etc: p.etc, quests: p.quests,
+      stats: { kills: p.stats.kills },
     },
     hintSeen: !G.hint,
   };
 }
-function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(saveState())); } catch (e) {} }
+function writeLocal(s) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) {} G.savedAt = s.savedAt || 0; }
+// 本機存檔；登入雲端時順便排程上傳（sync = true 表示重要事件，盡快上傳）
+function persist(sync) {
+  if (!G.player) return;
+  writeLocal(saveState());
+  cloudQueue(sync === true);
+}
 // 讀取 v2 存檔；沒有時改讀第一階段（v1）存檔並遷移等級、經驗、金幣、藥水
 function loadLocal() {
   try {
@@ -2434,7 +2481,226 @@ function loadLocal() {
   return null;
 }
 
-// ================= 視窗（技能 / 背包 / 裝備 / 任務 / 商店） =================
+// ================= 雲端存檔與排行榜 =================
+// 後端程式在 server/app.py。連不上、逾時或被瀏覽器擋下時只顯示提示，遊戲與本機存檔照常運作。
+const CLOUD_KEY = 'mistwood_cloud';                 // 登入資訊（token）存在這台裝置
+const CLOUD_TIMEOUT = 8000, CLOUD_GAP = 30000;      // 連線逾時 8 秒；一般存檔最多每 30 秒上傳一次
+const USER_RE = /^[A-Za-z0-9_\u4e00-\u9fff]{2,12}$/;
+const RANK_BY = [['level', '等級'], ['kills', '擊殺數'], ['gold', '金幣']];
+const CLOUD_TABS = [['account', '帳號', 'L'], ['rank', '排行榜', 'R']];
+const CLOUD = {
+  token: null, user: '', lastSync: 0,
+  state: '',                // '' 尚未連線／ok 已連線／offline 連不上／error 伺服器拒絕
+  busy: false, uploading: false, again: false, lastUpload: 0, timer: null, timerAt: 0,
+  pending: null,            // 雲端與本機存檔不同時，等待玩家選擇：{ save, at }
+  form: { user: '', pass: '' }, msg: '', msgOk: false,
+  rank: { by: 'level', data: {}, loading: false, err: '', errT: 0 },
+};
+function cloudLoadToken() {
+  try {
+    const o = JSON.parse(localStorage.getItem(CLOUD_KEY) || 'null');
+    if (o && typeof o.token === 'string' && o.token) { CLOUD.token = o.token; CLOUD.user = String(o.user || ''); CLOUD.lastSync = +o.lastSync || 0; }
+  } catch (e) {}
+}
+function cloudSaveToken() {
+  try {
+    if (CLOUD.token) localStorage.setItem(CLOUD_KEY, JSON.stringify({ token: CLOUD.token, user: CLOUD.user, lastSync: CLOUD.lastSync }));
+    else localStorage.removeItem(CLOUD_KEY);
+  } catch (e) {}
+}
+// 呼叫後端 API。失敗時丟出 { offline: true, msg }（連不上／逾時）或 { status, msg }（伺服器回傳錯誤）
+async function api(method, path, body) {
+  if (!API.ready) throw { offline: true, msg: '雲端功能尚未設定' };
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = setTimeout(() => { if (ctl) ctl.abort(); }, CLOUD_TIMEOUT);
+  const headers = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (CLOUD.token) headers.Authorization = 'Bearer ' + CLOUD.token;
+  try {
+    let res, data = null;
+    try {
+      res = await fetch(API.base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: ctl ? ctl.signal : undefined, cache: 'no-store' });
+      data = await res.json().catch(() => null);
+    } catch (e) {
+      throw { offline: true, msg: e && e.name === 'AbortError' ? '連線逾時' : '無法連線到雲端伺服器' };
+    }
+    if (!res.ok) throw { status: res.status, msg: (data && data.error) || `伺服器錯誤（${res.status}）` };
+    if (!data || typeof data !== 'object') throw { offline: true, msg: '伺服器回應格式錯誤' };
+    return data;
+  } finally { clearTimeout(timer); }
+}
+const n0 = v => Math.max(0, Math.floor(+v || 0));
+const cloudOn = () => API.ready && !!CLOUD.token;
+function cloudRefresh() { if (G.ui.win === 'account' || G.ui.win === 'rank') renderWin(); }
+function fmtTime(ms) { if (!ms) return '—'; try { return new Date(ms).toLocaleString('zh-TW', { hour12: false }); } catch (e) { return '—'; } }
+// 連線失敗：token 失效就登出；連不上時只在狀態改變時提示一次
+function cloudFail(e) {
+  if (e && e.status === 401 && CLOUD.token) { cloudSignedOut('登入已過期，請重新登入（按 L）', false); return; }
+  const was = CLOUD.state;
+  CLOUD.state = e && e.offline ? 'offline' : 'error';
+  CLOUD.msg = (e && e.msg) || '雲端同步失敗'; CLOUD.msgOk = false;
+  if (was !== CLOUD.state) toast(CLOUD.state === 'offline' ? '雲端連線失敗，進度已保存在本機' : `雲端同步失敗：${CLOUD.msg}`, '#ffb3a8');
+  cloudRefresh();
+}
+function cloudOk() {
+  if (CLOUD.state === 'offline' || CLOUD.state === 'error') toast('已重新連上雲端', '#9ff0c8');
+  CLOUD.state = 'ok'; CLOUD.msg = '';
+}
+// 上傳目前進度（同時寫入本機，讓兩邊的存檔時間一致）
+async function cloudUpload() {
+  if (!cloudOn() || CLOUD.pending || !G.player) return false;
+  if (CLOUD.uploading) { CLOUD.again = true; return false; }
+  clearTimeout(CLOUD.timer); CLOUD.timer = null;
+  CLOUD.uploading = true; CLOUD.lastUpload = Date.now();
+  const s = saveState();
+  writeLocal(s);
+  let ok = false;
+  try {
+    await api('PUT', '/api/save', { save: s });
+    ok = true; cloudOk(); CLOUD.lastSync = Date.now(); cloudSaveToken();
+  } catch (e) { cloudFail(e); }
+  CLOUD.uploading = false;
+  if (CLOUD.again) { CLOUD.again = false; cloudQueue(false); }
+  cloudRefresh();
+  return ok;
+}
+// 排程上傳：一般存檔與上次上傳至少間隔 30 秒；重要事件（force）約 1.5 秒後上傳
+function cloudQueue(force) {
+  if (!cloudOn() || CLOUD.pending) return;
+  const wait = force ? 1500 : Math.max(0, CLOUD_GAP - (Date.now() - CLOUD.lastUpload));
+  const at = Date.now() + wait;
+  if (CLOUD.timer && CLOUD.timerAt <= at) return;   // 已經排了更早的上傳
+  clearTimeout(CLOUD.timer);
+  CLOUD.timerAt = at;
+  CLOUD.timer = setTimeout(() => { CLOUD.timer = null; cloudUpload(); }, wait);
+}
+function hasLocalProgress() {
+  const p = G.player;
+  return !!p && (p.lv > 1 || p.exp > 0 || p.coins > 0 || p.stats.kills > 0 || Object.keys(p.quests).length > 0);
+}
+// 登入後（或開啟遊戲時已是登入狀態）比對雲端與本機存檔
+async function cloudCheck(atStartup) {
+  let r;
+  try { r = await api('GET', '/api/save'); } catch (e) { cloudFail(e); return; }
+  if (!CLOUD.token) return;
+  if (typeof r.username === 'string' && r.username) CLOUD.user = r.username;
+  cloudOk(); cloudSaveToken();
+  const cloud = r.save && typeof r.save === 'object' && r.save.player ? r.save : null;
+  const cloudAt = cloud ? +cloud.savedAt || 0 : 0;
+  if (!cloud) {   // 雲端還沒有存檔：直接上傳本機進度
+    if (await cloudUpload() && !atStartup) toast('已將目前進度上傳到雲端', '#9ff0c8');
+    return;
+  }
+  if (cloudAt && cloudAt === G.savedAt) { CLOUD.lastSync = Date.now(); cloudSaveToken(); cloudRefresh(); return; }   // 兩邊是同一份
+  if (!hasLocalProgress()) { cloudApply(cloud); toast('已載入雲端存檔', '#9ff0c8'); return; }
+  if (atStartup && cloudAt < G.savedAt) { cloudQueue(true); return; }   // 本機比較新（例如離線時玩的）：上傳本機
+  CLOUD.pending = { save: cloud, at: Date.parse(r.updated_at) || cloudAt };
+  G.ui.confirm = null;
+  toast(atStartup ? '雲端有不同的存檔，請按 L 選擇要使用哪一份' : '請選擇要使用本機或雲端的存檔', '#ffe066');
+  cloudRefresh();
+}
+// 套用雲端存檔（資料一樣經過 makePlayer 驗證）
+function cloudApply(save) {
+  CLOUD.pending = null; G.ui.confirm = null;
+  G.player = makePlayer(save.player);
+  G.drops = []; G.projs = []; G.fxs = []; G.timers = []; G.monsters = SPAWNS.map(makeMonster);
+  closeDlg();
+  updateCamera(0, true);
+  const s = saveState();
+  s.savedAt = +save.savedAt || s.savedAt;   // 保留雲端的存檔時間，下次開啟時才知道兩邊相同
+  writeLocal(s);
+  CLOUD.lastSync = Date.now(); cloudSaveToken(); cloudRefresh();
+}
+async function cloudUseLocal() {
+  CLOUD.pending = null;
+  if (await cloudUpload()) toast('已使用本機存檔，並覆蓋雲端存檔', '#9ff0c8');
+}
+function cloudUseCloud() {
+  const P = CLOUD.pending;
+  if (!P) return;
+  cloudApply(P.save); SFX.quest();
+  toast('已載入雲端存檔', '#9ff0c8');
+}
+async function cloudSyncNow() {
+  if (CLOUD.busy || CLOUD.uploading) return;
+  if (CLOUD.state !== 'ok') { CLOUD.busy = true; cloudRefresh(); await cloudCheck(false); CLOUD.busy = false; cloudRefresh(); return; }
+  if (await cloudUpload()) toast('已同步到雲端', '#9ff0c8');
+}
+// 登入或註冊（kind = 'login' / 'register'）
+async function cloudAuth(kind) {
+  if (CLOUD.busy || !API.ready || CLOUD.token) return;
+  const u = $('acUser'), pw = $('acPass');
+  if (u) CLOUD.form.user = u.value;
+  if (pw) CLOUD.form.pass = pw.value;
+  const user = CLOUD.form.user.trim(), pass = CLOUD.form.pass;
+  let bad = '';
+  if (!USER_RE.test(user)) bad = '帳號需為 2～12 個字（英文字母、數字、底線或中文）';
+  else if (pass.length < 6) bad = '密碼至少需要 6 個字元';
+  if (bad) { CLOUD.msg = bad; CLOUD.msgOk = false; SFX.deny(); renderWin(); return; }
+  CLOUD.busy = true; CLOUD.msg = kind === 'login' ? '登入中…' : '註冊中…'; CLOUD.msgOk = true; renderWin();
+  try {
+    const r = await api('POST', kind === 'login' ? '/api/login' : '/api/register', { username: user, password: pass });
+    if (typeof r.token !== 'string' || !r.token) throw { msg: '伺服器回應格式錯誤' };
+    CLOUD.token = r.token; CLOUD.user = String(r.username || user);
+    CLOUD.form.pass = ''; CLOUD.msg = ''; CLOUD.state = ''; CLOUD.rank.data = {};
+    cloudSaveToken();
+    toast(kind === 'login' ? `登入成功，歡迎回來 ${CLOUD.user}` : `註冊成功，歡迎 ${CLOUD.user}`, '#9ff0c8'); SFX.quest();
+    await cloudCheck(false);
+  } catch (e) {
+    CLOUD.msg = (e && e.msg) || '登入失敗'; CLOUD.msgOk = false; SFX.deny();
+  }
+  CLOUD.busy = false; cloudRefresh();
+}
+async function cloudLogout() {
+  if (CLOUD.busy || !CLOUD.token) return;
+  CLOUD.busy = true; cloudRefresh();
+  if (!CLOUD.pending) await cloudUpload();   // 登出前先上傳最新進度
+  if (CLOUD.token) { try { await api('POST', '/api/logout'); } catch (e) {} }
+  CLOUD.busy = false;
+  if (CLOUD.token) cloudSignedOut('已登出，進度仍保存在這台裝置', true);
+}
+function cloudSignedOut(msg, ok) {
+  clearTimeout(CLOUD.timer); CLOUD.timer = null;
+  if (CLOUD.user) CLOUD.form.user = CLOUD.user;
+  CLOUD.token = null; CLOUD.user = ''; CLOUD.pending = null; CLOUD.state = ''; CLOUD.lastSync = 0; CLOUD.rank.data = {};
+  CLOUD.msg = msg; CLOUD.msgOk = ok;
+  cloudSaveToken();
+  toast(msg, ok ? '#d8cfb4' : '#ffb3a8');
+  cloudRefresh();
+}
+// 背景切換時（例如手機切到其他 App）盡快上傳
+function cloudFlush() { if (cloudOn() && !CLOUD.pending && Date.now() - CLOUD.lastUpload > 5000) cloudUpload(); }
+async function rankLoad(by) {
+  const R = CLOUD.rank;
+  if (R.loading || !API.ready) return;
+  R.loading = true; R.err = '';
+  try {
+    const r = await api('GET', `/api/leaderboard?by=${by}&limit=20`);
+    R.data[by] = { t: Date.now(), list: Array.isArray(r.entries) ? r.entries : [], me: r.me || null, total: +r.total || 0 };
+  } catch (e) { R.err = (e && e.msg) || '讀取失敗'; R.errT = Date.now(); }
+  R.loading = false;
+  if (G.ui.win === 'rank') renderWin();
+}
+function cloudInit() {
+  cloudLoadToken();
+  if (cloudOn()) cloudCheck(true);
+}
+const CLOUD_NOT_READY = '<div class="hd">雲端功能尚未設定</div><div class="det">目前只使用本機存檔，遊戲可以正常遊玩。' +
+  '<div class="d dim" style="margin-top:4px">開發者：部署後端（見 server/DEPLOY.md）後，把 index.html 開頭的 PA_USERNAME 改成 PythonAnywhere 帳號名稱，即可啟用雲端存檔與排行榜。</div></div>';
+function saveCard(title, pl, at, act, label) {
+  pl = pl || {};
+  const n = (v, d) => Math.max(0, Math.floor(+v || d));
+  const cf = G.ui.confirm === act;
+  return `<div class="det"><div class="nm">${title}</div>
+    <div class="st"><span class="dim">職業</span><span>${JOBS[pl.job] ? JOBS[pl.job].name : '新手'}</span></div>
+    <div class="st"><span class="dim">等級</span><span>Lv.${clamp(n(pl.lv, 1), 1, 200)}</span></div>
+    <div class="st"><span class="dim">金幣</span><span>${n(pl.coins, 0).toLocaleString()}</span></div>
+    <div class="st"><span class="dim">擊殺數</span><span>${n(pl.stats && pl.stats.kills, 0).toLocaleString()}</span></div>
+    <div class="st"><span class="dim">更新時間</span><span>${fmtTime(at)}</span></div>
+    <div class="acts2"><button class="sb ${cf ? 'red' : ''}" data-do="${act}">${cf ? '確定使用？' : label}</button></div></div>`;
+}
+
+// ================= 視窗（技能 / 背包 / 裝備 / 任務 / 商店 / 帳號 / 排行榜） =================
 const WIN_TABS = [['skill', '技能', 'K'], ['bag', '背包', 'I'], ['equip', '裝備', 'E'], ['quest', '任務', 'Q']];
 const fmtStat = (k, v) => (k === 'crit' || k === 'spd') ? `+${v}%` : `+${v}`;
 const npcName = id => NPCS.find(n => n.id === id).name;
@@ -2522,7 +2788,7 @@ const WIN = {
     const slot = SLOT_ORDER[sel], it = p.equip[slot];
     h += it ? `<div class="det">${itemDetail(it)}<div class="acts2"><button class="sb alt" data-do="unequip" data-a="${slot}">卸下</button></div></div>`
             : `<div class="det dim">${SLOTS[slot]}欄位尚未裝備。打倒怪物或在商店購買裝備後，到背包（I）點選「穿上」。</div>`;
-    const rows = [['職業', JOBS[p.job].name], ['等級', 'Lv.' + p.lv], ['HP', p.maxHp], ['MP', p.maxMp], ['攻擊', p.atk], ['防禦', p.def], ['爆擊率', Math.round(p.crit * 100) + '%'], ['移動速度', Math.round(p.spd * 100) + '%']];
+    const rows = [['職業', JOBS[p.job].name], ['等級', 'Lv.' + p.lv], ['HP', p.maxHp], ['MP', p.maxMp], ['攻擊', p.atk], ['防禦', p.def], ['爆擊率', Math.round(p.crit * 100) + '%'], ['移動速度', Math.round(p.spd * 100) + '%'], ['累計擊殺', p.stats.kills.toLocaleString()], ['金幣', p.coins.toLocaleString()]];
     h += '<div class="sgrid">' + rows.map(([a, b]) => `<div class="st"><span class="dim">${a}</span><b>${b}</b></div>`).join('') + '</div>';
     const bs = Object.keys(p.buffs);
     if (bs.length) h += `<div class="d ok" style="margin-top:4px">增益中：${bs.map(id => SKILLS[id].name).join('、')}</div>`;
@@ -2572,26 +2838,92 @@ const WIN = {
     }
     return [h, `<span>金幣 <b>${p.coins.toLocaleString()}</b></span><span>背包 ${p.bag.length} / ${BAG_MAX}</span><span class="keyOnly">←→ 切換購買／賣出・↑↓ 選擇・Enter 確認</span>`];
   },
+  account() {
+    if (!API.ready) return [CLOUD_NOT_READY, ''];
+    const busy = CLOUD.busy ? 'disabled' : '';
+    let h = '';
+    if (!CLOUD.token) {
+      h += `<div class="hd">雲端存檔</div><div class="d">登入後，進度會自動備份到雲端（換裝置也能繼續玩），並可參加排行榜。</div>
+        <form id="acctForm" class="acct" autocomplete="on" novalidate>
+        <label for="acUser">帳號</label><input class="inp" id="acUser" name="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="12" value="${esc(CLOUD.form.user)}" ${busy}>
+        <label for="acPass">密碼</label><input class="inp" id="acPass" name="password" type="password" autocomplete="current-password" maxlength="64" ${busy}>
+        <div class="d dim" style="margin-top:4px">帳號 2～12 個字（英文字母、數字、底線或中文）；密碼至少 6 碼。</div>
+        <div class="acts2"><button class="sb" type="submit" ${busy}>登入</button><button class="sb alt" type="button" data-do="register" ${busy}>註冊新帳號</button></div>
+        <div class="msg ${CLOUD.msgOk ? 'ok' : 'bad'}">${esc(CLOUD.msg)}</div></form>
+        <div class="d dim">不登入也能正常遊玩，進度會保存在這台裝置。</div>`;
+      return [h, '<span class="keyOnly">輸入完按 Enter 登入・Esc 關閉</span>'];
+    }
+    if (CLOUD.pending) {
+      const P = CLOUD.pending;
+      h += `<div class="hd">選擇要使用的存檔</div><div class="d">這台裝置與雲端帳號「${esc(CLOUD.user)}」都有存檔，而且內容不同。請選擇要保留哪一份，<b class="bad">另一份會被覆蓋</b>。</div>
+        <div class="cmp2">${saveCard('這台裝置', G.player, G.savedAt, 'useLocal', '使用本機存檔')}${saveCard('雲端', P.save.player, P.at, 'useCloud', '使用雲端存檔')}</div>
+        <div class="d dim" style="margin-top:6px">選擇之前不會自動上傳；進度仍會保存在這台裝置。</div>
+        <div class="acts2"><button class="sb red" data-do="logout" ${busy}>登出</button></div>`;
+      return [h, '<span>點兩下按鈕確認選擇</span>'];
+    }
+    const st = CLOUD.busy || CLOUD.uploading ? ['同步中…', 'dim'] : CLOUD.state === 'ok' ? ['已連線', 'ok'] :
+      CLOUD.state === 'offline' ? ['離線中（進度保存在本機）', 'bad'] : CLOUD.state === 'error' ? ['同步失敗', 'bad'] : ['連線中…', 'dim'];
+    h += `<div class="hd">已登入：${esc(CLOUD.user)}</div>
+      <div class="sgrid" style="grid-template-columns:1fr">
+        <div class="st"><span class="dim">雲端狀態</span><span class="${st[1]}">${st[0]}</span></div>
+        <div class="st"><span class="dim">最後同步</span><span>${CLOUD.lastSync ? fmtTime(CLOUD.lastSync) : '尚未同步'}</span></div>
+        <div class="st"><span class="dim">本機存檔</span><span>${fmtTime(G.savedAt)}</span></div>
+      </div>
+      ${CLOUD.msg && (CLOUD.state === 'offline' || CLOUD.state === 'error') ? `<div class="d bad" style="margin-top:4px">${esc(CLOUD.msg)}</div>` : ''}
+      <div class="d dim" style="margin-top:6px">登入期間每 30 秒自動上傳一次；升級、轉職、完成任務時會立即上傳。</div>
+      <div class="acts2"><button class="sb" data-do="syncNow" ${busy}>立即同步</button><button class="sb alt" data-do="tab" data-a="rank">查看排行榜</button><button class="sb red" data-do="logout" ${busy}>登出</button></div>`;
+    return [h, `<span>伺服器：${esc(API.base.replace(/^https?:\/\//, ''))}</span>`];
+  },
+  rank() {
+    const R = CLOUD.rank;
+    let h = `<div class="rtabs">${RANK_BY.map(([k, nm]) => `<button class="sb ${R.by === k ? '' : 'alt'}" data-do="rankBy" data-a="${k}">${nm}</button>`).join('')}` +
+      `<button class="sb alt" data-do="rankRefresh" style="margin-left:auto" ${R.loading || !API.ready ? 'disabled' : ''}>重新整理</button></div>`;
+    if (!API.ready) return [h + CLOUD_NOT_READY, ''];
+    let d = R.data[R.by];
+    if (!R.loading && (!d || Date.now() - d.t > 30000) && Date.now() - R.errT > 10000) rankLoad(R.by);   // 超過 30 秒自動重新讀取
+    d = R.data[R.by];
+    if (!d) h += `<div class="det dim">${R.loading ? '讀取排行榜中…' : `無法讀取排行榜：${esc(R.err)}。請稍後按「重新整理」。`}</div>`;
+    else {
+      if (R.err) h += `<div class="d bad" style="margin-bottom:4px">更新失敗：${esc(R.err)}（顯示先前的資料）</div>`;
+      if (!d.list.length) h += '<div class="det dim">目前還沒有人上榜。登入並上傳存檔，就能成為第一名！</div>';
+      const me = CLOUD.user.toLowerCase(), n = v => Math.max(0, Math.floor(+v || 0));
+      const val = v => R.by === 'level' ? `Lv.${n(v)}` : R.by === 'kills' ? `${n(v).toLocaleString()} 隻` : `${n(v).toLocaleString()} 金幣`;
+      d.list.forEach(e => {
+        const mine = !!me && String(e.username).toLowerCase() === me;
+        h += `<div class="row ${mine ? 'me' : ''}"><div class="rk">${n(e.rank)}</div>
+          <div class="grow"><div class="t">${esc(e.username)}${mine ? '<span class="tg" style="background:#2f5f8a">你</span>' : ''}<span class="tg">${JOBS[e.job] ? JOBS[e.job].name : '新手'}</span></div>
+          <div class="d dim">Lv.${n(e.level)}・擊殺 ${n(e.kills).toLocaleString()}・金幣 ${n(e.gold).toLocaleString()}</div></div>
+          <div class="val">${val(e.value)}</div></div>`;
+      });
+    }
+    let foot = '<span>登入後即可參加排行榜（按 L）</span>';
+    if (CLOUD.token) foot = d && d.me && d.me.rank ? `<span>你的名次：<b>第 ${n0(d.me.rank)} 名</b>（共 ${n0(d.total)} 人）</span>` : '<span>你還沒上榜（存檔上傳後就會出現）</span>';
+    return [h, foot + '<span class="keyOnly">←→ 切換類別</span>'];
+  },
 };
 function renderWin(resetScroll) {
   const el = $('win'), w = G.ui.win;
   if (!w) { el.classList.remove('show'); el.innerHTML = ''; return; }
   const old = $('wb'), top = old && !resetScroll ? old.scrollTop : 0;
+  const ae = document.activeElement, focusId = ae && ae.id && el.contains(ae) ? ae.id : null;   // 重繪後還原輸入框焦點
   let head = '<div class="wh">';
-  if (w === 'shop') head += '<span class="wt">葛蘭的商店</span>' + [['buy', '購買'], ['sell', '賣出']].map(([t, nm]) => `<button class="tab ${G.ui.shopTab === t ? 'on' : ''}" data-do="stab" data-a="${t}">${nm}</button>`).join('');
+  if (w === 'account' || w === 'rank') head += CLOUD_TABS.map(([id, nm, k]) => `<button class="tab ${w === id ? 'on' : ''}" data-do="tab" data-a="${id}">${nm}<small>${k}</small></button>`).join('');
+  else if (w === 'shop') head += '<span class="wt">葛蘭的商店</span>' + [['buy', '購買'], ['sell', '賣出']].map(([t, nm]) => `<button class="tab ${G.ui.shopTab === t ? 'on' : ''}" data-do="stab" data-a="${t}">${nm}</button>`).join('');
   else head += WIN_TABS.map(([id, nm, k]) => `<button class="tab ${w === id ? 'on' : ''}" data-do="tab" data-a="${id}">${nm}<small>${k}</small></button>`).join('');
   head += '<button class="xbtn" data-do="close" aria-label="關閉視窗">✕</button></div>';
   const [body, foot] = WIN[w]();
   el.innerHTML = head + `<div class="wb" id="wb">${body}</div>` + (foot ? `<div class="wf">${foot}</div>` : '');
   el.classList.add('show');
   $('wb').scrollTop = top;
+  if ($('acPass')) $('acPass').value = CLOUD.form.pass;   // 密碼不寫進 HTML，重繪後用程式填回
+  if (focusId && $(focusId) && !$(focusId).disabled) $(focusId).focus({ preventScroll: true });
   if (G.ui.kbd) { const s = el.querySelector('.wb .sel'); if (s && s.scrollIntoView) s.scrollIntoView({ block: 'nearest' }); }
   G.ui.kbd = false;
 }
 function uiAction(act, a, b) {
   const p = G.player;
   if (!p || !G.ui.win) return;
-  if (act !== 'drop' && act !== 'sell') G.ui.confirm = null;
+  if (act !== 'drop' && act !== 'sell' && act !== 'useLocal' && act !== 'useCloud') G.ui.confirm = null;
   switch (act) {
     case 'close': closeWin(); return;
     case 'tab': G.ui.win = a; SFX.click(); renderWin(true); return;
@@ -2611,6 +2943,13 @@ function uiAction(act, a, b) {
     }
     case 'track': { const s = p.quests[a]; if (s) { s.tr = s.tr === false; SFX.click(); persist(); } break; }
     case 'buy': buy(a, +b || 1); break;
+    case 'register': cloudAuth('register'); return;
+    case 'logout': cloudLogout(); return;
+    case 'syncNow': cloudSyncNow(); return;
+    case 'useLocal': if (G.ui.confirm === 'useLocal') { G.ui.confirm = null; cloudUseLocal(); } else { G.ui.confirm = 'useLocal'; SFX.click(); } break;
+    case 'useCloud': if (G.ui.confirm === 'useCloud') { G.ui.confirm = null; cloudUseCloud(); } else { G.ui.confirm = 'useCloud'; SFX.click(); } break;
+    case 'rankBy': CLOUD.rank.by = a; SFX.click(); break;
+    case 'rankRefresh': { const d = CLOUD.rank.data[CLOUD.rank.by]; if (d) d.t = 0; CLOUD.rank.errT = 0; SFX.click(); break; }
   }
   renderWin();
 }
@@ -2650,6 +2989,11 @@ function winKey(e) {
     if (c === 'ArrowLeft' || c === 'ArrowRight') { uiAction('stab', G.ui.shopTab === 'buy' ? 'sell' : 'buy'); return true; }
     if (vert) { G.ui.sel.shop = Math.max(0, G.ui.sel.shop + nav); renderWin(); return true; }
     if (enter) { if (G.ui.shopTab === 'buy') uiAction('buy', SHOP_LIST[G.ui.sel.shop], '1'); else uiAction('sell', String(G.ui.sel.shop)); return true; }
+  } else if (w === 'rank') {
+    if (c === 'ArrowLeft' || c === 'ArrowRight') {
+      const i = RANK_BY.findIndex(r => r[0] === CLOUD.rank.by);
+      uiAction('rankBy', RANK_BY[(i + nav + RANK_BY.length) % RANK_BY.length][0]); return true;
+    }
   }
   G.ui.kbd = false;
   return !!nav || enter || !!KEYMAP[c];
@@ -2712,6 +3056,7 @@ function setupUI() {
     G.player = makePlayer({}); G.drops = []; G.projs = []; G.fxs = []; G.timers = []; G.monsters = SPAWNS.map(makeMonster);
     G.ui.win = null; G.ui.dlg = null; renderWin(); renderDlg();
     updateCamera(0, true); $('resetBtn').textContent = '已重置進度';
+    if (CLOUD.token) cloudSignedOut('已重置本機進度並登出雲端（雲端存檔保留）', true);   // 避免把重置後的進度蓋掉雲端存檔
   });
   $('helpBtn').addEventListener('click', e => { e.currentTarget.blur(); openHint(); });
   $('muteBtn').addEventListener('click', e => {
@@ -2730,6 +3075,11 @@ function setupUI() {
     e.stopPropagation(); initAudio();
     uiAction(b.dataset.do, b.dataset.a, b.dataset.b);
   });
+  $('win').addEventListener('input', e => {
+    if (e.target.id === 'acUser') CLOUD.form.user = e.target.value;
+    else if (e.target.id === 'acPass') CLOUD.form.pass = e.target.value;
+  });
+  $('win').addEventListener('submit', e => { e.preventDefault(); if (e.target.id === 'acctForm') cloudAuth('login'); });
   $('dlg').addEventListener('click', e => {
     e.stopPropagation(); initAudio();
     const b = e.target.closest('[data-opt]'), d = G.ui.dlg;
@@ -2754,7 +3104,7 @@ function setupUI() {
   addEventListener('resize', layout);
   addEventListener('orientationchange', () => setTimeout(layout, 150));
   addEventListener('touchstart', enableTouch, { passive: true, once: true });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { releaseAll(); persist(); } last = 0; });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { releaseAll(); persist(); cloudFlush(); } last = 0; });
   addEventListener('pagehide', persist);
 }
 
@@ -2781,6 +3131,7 @@ function start(data) {
   data = data || {};
   const saved = data.player ? data : loadLocal();
   G.player = makePlayer(saved && saved.player);
+  G.savedAt = saved && +saved.savedAt || 0;
   G.monsters = SPAWNS.map(makeMonster);
   if (saved && saved.migrated) {
     toast('已從第一階段存檔繼承等級、經驗、金幣與藥水', '#bfe3ff');
@@ -2793,6 +3144,7 @@ function start(data) {
   layout();
   updateCamera(0, true);
   if (data.hintSeen) { G.hint = false; $('hint').classList.remove('show'); G.introShown = true; }
+  cloudInit();   // 已登入時在背景比對雲端存檔（失敗也不影響遊戲）
   requestAnimationFrame(frame);
 }
 window.claude?.hot?.snapshot?.(() => saveState());

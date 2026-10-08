@@ -1,10 +1,37 @@
 # 晨霧森林
 
-原創 2D 橫向捲軸動作 RPG（第二階段原型）。純 HTML + Canvas，單一檔案、無外部資源（圖像全部以程式繪製、音效用 WebAudio 合成），瀏覽器打開就能玩。
+原創 2D 橫向捲軸動作 RPG（第三階段原型）。前端是純 HTML + Canvas 單一檔案、無外部資源（圖像全部以程式繪製、音效用 WebAudio 合成），瀏覽器打開就能玩；第三階段新增 Python Flask 後端，提供**雲端存檔**與**排行榜**。
+
+- 線上遊玩：https://peoplepop.github.io/mistwood/
+
+## 架構
+
+```
+瀏覽器（玩家）
+  │  開啟遊戲畫面
+  ├──────────────► GitHub Pages：index.html（main 分支根目錄，push 後自動更新）
+  │                https://peoplepop.github.io/mistwood/
+  │  註冊／登入、上傳／下載存檔、排行榜（JSON API，CORS）
+  └──────────────► PythonAnywhere：server/app.py（Flask + SQLite）
+                   https://peoplepop.pythonanywhere.com/api/...
+```
+
+| 位置 | 內容 |
+| --- | --- |
+| `index.html` | 遊戲本體（前端）。開頭的 `PA_USERNAME`／`PA_DOMAIN` 決定後端網址 |
+| `server/app.py` | Flask 後端（帳號、token、存檔、排行榜、CORS、錯誤處理） |
+| `server/schema.sql` | SQLite 資料表（第一次連線時自動建立） |
+| `server/tests/` | pytest 測試 |
+| `server/requirements.txt` | 後端套件（Flask、pytest） |
+| `server/DEPLOY.md` | **PythonAnywhere 部署教學**（逐步說明） |
+
+- 在 `localhost`／`127.0.0.1` 開啟遊戲時，前端會自動改連本機後端 `http://127.0.0.1:5000`。
+- 後端連不上、逾時（8 秒）或被瀏覽器擋下（例如 claude.ai Artifact 環境）時，遊戲照常可玩、本機存檔照常運作，只會顯示簡短提示。
+- 若 `PA_USERNAME` 維持佔位值 `'YOUR_PA_USERNAME'`，雲端功能會顯示「雲端功能尚未設定」並停用，不會發出任何連線。
 
 ## 遊玩方式
 
-- 直接用瀏覽器開啟 `index.html`
+- 直接用瀏覽器開啟 `index.html`（只有本機存檔）
 - 或在此資料夾啟動本機伺服器（手機同 Wi-Fi 可連線測試）：
 
 ```bash
@@ -12,6 +39,59 @@ python -m http.server 8000
 ```
 
 然後開啟 http://localhost:8000
+
+## 本地開發（前端＋後端一起跑）
+
+需要 Python 3.10 以上。開兩個終端機視窗：
+
+**終端機 1：後端（Flask，127.0.0.1:5000）**
+
+```bash
+cd server
+python -m venv .venv
+# Windows：
+.venv\Scripts\activate
+# macOS / Linux：
+# source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
+
+開啟 http://127.0.0.1:5000/api/health 看到 `{"ok": true, ...}` 代表後端正常。
+資料庫預設建立在 `server/mistwood.db`（已被 `.gitignore` 排除），可用環境變數 `MISTWOOD_DB` 指定其他位置。
+
+**終端機 2：前端（專案根目錄）**
+
+```bash
+python -m http.server 8765
+```
+
+開啟 http://localhost:8765/ ，按 **L** 註冊帳號即可測試雲端存檔與排行榜。
+
+**執行測試**
+
+```bash
+cd server
+python -m pytest -q
+```
+
+### 後端 API
+
+所有 API 都使用 JSON，錯誤一律回傳 `{"error": "繁中訊息"}`；需要登入的 API 要帶標頭 `Authorization: Bearer <token>`。
+
+| 方法 | 路徑 | 說明 |
+| --- | --- | --- |
+| GET | `/api/health` | 健康檢查 |
+| POST | `/api/register` | 註冊 `{username, password}` → `{token, username}`（帳號 2～12 字：英數字、底線或中文；密碼至少 6 碼） |
+| POST | `/api/login` | 登入（10 分鐘內失敗 5 次會暫時鎖定） |
+| POST | `/api/logout` | 登出（token 失效） |
+| GET | `/api/save` | 讀取雲端存檔 `{username, save, updated_at}` |
+| PUT | `/api/save` | 上傳存檔 `{save: {...}}`（上限 200KB） |
+| GET | `/api/leaderboard?by=level\|kills\|gold&limit=20` | 排行榜前 N 名；帶 token 時另外回傳自己的名次 `me` |
+
+- 排行榜數值由伺服器從雲端存檔解析（`player.lv`、`player.stats.kills`、`player.coins`），不採用前端另外送的分數；並做合理性檢查（等級 1～200、金幣與擊殺數上限），不合理的存檔會被拒絕。
+- CORS 只允許 `https://peoplepop.github.io` 與 `http://localhost:*`／`http://127.0.0.1:*`（可用環境變數 `MISTWOOD_EXTRA_ORIGINS` 增加）。
+- 設定用環境變數：`MISTWOOD_SECRET`（token 雜湊密鑰，正式環境必填）、`MISTWOOD_DB`（資料庫路徑）。
 
 ## 操作
 
@@ -25,12 +105,15 @@ python -m http.server 8000
 | 1 / 2 | 紅色藥水 / 藍色藥水 |
 | ↑ / Enter | 靠近 NPC 時對話（也可直接點擊畫面中的 NPC） |
 | K / I / E / Q | 技能 / 背包 / 裝備 / 任務視窗（再按一次或 Esc 關閉） |
+| L / R | 帳號（雲端存檔）/ 排行榜視窗 |
 
 對話框：Enter／空白鍵 繼續，←→ 選擇選項（或按數字鍵），Esc 離開。
 視窗內：方向鍵選擇、Enter 執行（加點／穿上／卸下／購買／賣出），背包中 Delete 丟棄；技能視窗選中技能後按 X／A／S／D 直接綁定。
 **開啟視窗或對話時遊戲會暫停**，角色不會誤動作。
 
-觸控裝置會自動顯示虛擬按鈕：方向鍵、攻擊、跳躍、紅／藍藥水，以及 4 個技能鍵（按鈕上顯示已綁定的技能名稱）；HUD 上的「技能／背包／裝備／任務」按鈕開啟各視窗，靠近 NPC 按 ▲ 或點擊 NPC 對話。
+觸控裝置會自動顯示虛擬按鈕：方向鍵、攻擊、跳躍、紅／藍藥水，以及 4 個技能鍵（按鈕上顯示已綁定的技能名稱）；HUD 上的「技能／背包／裝備／任務／帳號」按鈕開啟各視窗，靠近 NPC 按 ▲ 或點擊 NPC 對話。
+
+帳號視窗的輸入框打字時，按鍵不會觸發任何遊戲操作（Esc 關閉視窗、Enter 送出登入）。
 
 ## 系統說明
 
@@ -88,9 +171,19 @@ python -m http.server 8000
 - 地圖向右延伸出「**霧林深處**」（x 3600 以後，建議 Lv.12 以上），新增 4 個平台、4 條繩索與淡紫色霧氣。
 - 怪物：綠苔蝸（Lv.1）、跳跳菇（Lv.4）、石甲怪（Lv.8）、**霧狼**（Lv.12，追擊速度快）、**古樹精**（Lv.15，高血量）。
 
+### 雲端存檔與排行榜（第三階段）
+
+- 按 **L**（或 HUD「帳號」）開啟帳號視窗：註冊、登入、登出，並顯示登入狀態、雲端連線狀態與最後同步時間；也可按「立即同步」。
+- 登入期間，本機存檔時會同步上傳雲端：一般情況最多每 30 秒一次；**升級、轉職、完成任務**時約 1.5 秒內上傳；切到背景（例如手機切換 App）與登出前也會上傳。
+- 登入時若雲端與本機都有存檔且內容不同，會並列顯示兩邊的職業／等級／金幣／擊殺數／更新時間，讓玩家選擇要使用哪一份（需按兩下確認，另一份會被覆蓋）；選擇前不會自動上傳。本機沒有進度時會直接載入雲端存檔。
+- 已登入狀態重新開啟遊戲時，會在背景比對：兩邊相同就不打擾；本機較新就上傳；雲端較新（例如在其他裝置玩過）則提示按 L 選擇，HUD「帳號」按鈕出現紅點。
+- 按 **R** 開啟排行榜：可切換「等級／擊殺數／金幣」（←→），顯示前 20 名，自己的那一列以藍框標示，下方顯示自己的名次。
+- 開始畫面的「重置進度」若在登入狀態，會同時登出雲端（雲端存檔保留，避免被重置後的進度覆蓋）。
+- 登入 token 存在 localStorage 的 `mistwood_cloud`，有效期 30 天。
+
 ### 存檔
 
-- localStorage 自動存檔，鍵值為 `mistwood_proto_v2`，內容包含等級、經驗、金幣、藥水、職業、技能與技能點、快捷鍵、裝備、背包、任務道具與任務進度。
+- localStorage 自動存檔，鍵值為 `mistwood_proto_v2`，內容包含等級、經驗、金幣、藥水、職業、技能與技能點、快捷鍵、裝備、背包、任務道具與任務進度，以及第三階段新增的 `player.stats.kills`（累計擊殺數，舊存檔從 0 開始）與 `savedAt`（存檔時間，用來比對本機與雲端）。裝備視窗（E）會顯示累計擊殺數。
 - 若只有第一階段的 `mistwood_proto_v1` 存檔，會自動遷移等級、經驗、金幣與藥水，並依等級補發技能點（每級 3 點）；舊存檔不會被刪除。
 - 開始畫面的「重置進度」會同時清除 v1 與 v2 存檔。
 
@@ -100,4 +193,5 @@ python -m http.server 8000
 
 ## 線上版
 
-另有發布於 claude.ai 的 Artifact 版本。Artifact 版不含檔案開頭的 `<!doctype>`、`<html>`、`<meta>` 四行（由平台自動補上），其餘內容與本檔相同。
+- GitHub Pages：https://peoplepop.github.io/mistwood/ （含雲端存檔與排行榜）
+- 另有發布於 claude.ai 的 Artifact 版本。Artifact 版不含檔案開頭的 `<!doctype>`、`<html>`、`<meta>` 四行（由平台自動補上），其餘內容與本檔相同。Artifact 環境可能擋下對外連線，此時雲端功能只會顯示連線失敗提示，遊戲與本機存檔不受影響。

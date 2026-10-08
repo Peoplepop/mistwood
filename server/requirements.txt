@@ -1,0 +1,5 @@
+# Mistwood backend (Python 3.10+)
+Flask>=3.0,<4
+
+# tests
+pytest>=8

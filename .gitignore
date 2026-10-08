@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# SQLite 資料庫（雲端存檔資料，不要放進 git）
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# 其他
+.env
+.DS_Store
+Thumbs.db
