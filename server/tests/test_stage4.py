@@ -65,7 +65,7 @@ def test_old_database_is_migrated_in_place(tmp_path):
 
     db = sqlite3.connect(path)
     cols = {r[1] for r in db.execute("PRAGMA table_info(saves)")}
-    assert {"boss_kills", "flagged", "flag_reason", "updated_ts"} <= cols
+    assert {"boss_kills", "flagged", "flag_reason", "updated_ts", "hw_kills", "hw_exp_ts"} <= cols
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert "register_log" in tables
     db.close()
@@ -76,12 +76,17 @@ def test_migration_backfills_timestamp_and_is_idempotent(tmp_path):
     db.row_factory = sqlite3.Row
     db.executescript(OLD_SCHEMA)
     db.execute("INSERT INTO users (username, pw_hash, created_at) VALUES ('a', 'x', 'now')")
-    db.execute("INSERT INTO saves (user_id, data, updated_at) VALUES (1, '{}', '2026-10-08T03:12:45Z')")
+    db.execute("INSERT INTO saves (user_id, data, level, kills, updated_at) "
+               "VALUES (1, '{}', 25, 700, '2026-10-08T03:12:45Z')")
     app_module.migrate_db(db)
     app_module.migrate_db(db)   # 重複執行不會出錯
-    row = db.execute("SELECT updated_ts, flagged, boss_kills, flag_reason FROM saves").fetchone()
-    assert row["updated_ts"] == 1791429165   # 2026-10-08T03:12:45Z 的 Unix 時間
+    row = db.execute("SELECT * FROM saves").fetchone()
+    ts = 1791429165             # 2026-10-08T03:12:45Z 的 Unix 時間
+    assert row["updated_ts"] == ts
     assert row["flagged"] == 0 and row["boss_kills"] == 0 and row["flag_reason"] is None
+    # 最高合理進度從目前的數值開始
+    assert (row["hw_kills"], row["hw_boss"], row["hw_exp"]) == (700, 0, app_module.CUM_EXP[25])
+    assert row["hw_kills_ts"] == row["hw_boss_ts"] == row["hw_exp_ts"] == ts
     db.close()
 
 
@@ -135,11 +140,12 @@ def test_job_must_match_level(client, register):
 
 def test_level_requires_minimum_kills(client, register):
     assert app_module.min_kills_for_level(20, 0) == 0     # Lv.20 以前不要求擊殺數（任務獎勵、舊存檔）
-    assert app_module.min_kills_for_level(30, 0) == 99
-    assert app_module.min_kills_for_level(30, 10) == 0    # Boss 給的經驗值也算進去
+    assert app_module.min_kills_for_level(25, 0) == 0     # Lv.20 之後的任務經驗值也扣掉
+    assert app_module.min_kills_for_level(30, 0) == 32
+    assert app_module.min_kills_for_level(30, 1) == 15    # Boss 給的經驗值也算進去
     assert ranked_and_reason(client, register("a1"), make_save(lv=20, kills=0, job="mage")) == (True, None)
-    assert ranked_and_reason(client, register("a2"), make_save(lv=30, kills=99, job="mage")) == (True, None)
-    assert ranked_and_reason(client, register("a3"), make_save(lv=30, kills=98, job="mage")) == (False, "等級與擊殺數不符")
+    assert ranked_and_reason(client, register("a2"), make_save(lv=30, kills=32, job="mage")) == (True, None)
+    assert ranked_and_reason(client, register("a3"), make_save(lv=30, kills=31, job="mage")) == (False, "等級與擊殺數不符")
     assert ranked_and_reason(client, register("a4"), make_save(lv=200, kills=0)) == (False, "等級與擊殺數不符")
 
 
@@ -221,10 +227,75 @@ def test_level_rate_limit(client, register, clock):
     for token in (slow, quick):
         assert ranked_and_reason(client, token, make_save(lv=20, kills=2000, job="warrior"))[0] is True
     clock.advance(1)
-    # Lv.20 → Lv.30 需要約 5.9 萬經驗值，1 秒內不可能
-    assert ranked_and_reason(client, quick, make_save(lv=30, kills=2000, job="knight")) == (False, "等級提升過快")
-    clock.advance(19)
-    assert ranked_and_reason(client, slow, make_save(lv=30, kills=2000, job="knight"))[0] is True
+    # Lv.20 → Lv.35 需要約 13.8 萬經驗值，1 秒內不可能（寬限 3166 × 秒數 ＋ 7 萬）
+    assert ranked_and_reason(client, quick, make_save(lv=35, kills=2000, job="knight")) == (False, "等級提升過快")
+    clock.advance(29)
+    assert ranked_and_reason(client, slow, make_save(lv=35, kills=2000, job="knight"))[0] is True
+
+
+def test_realistic_level30_player_is_ranked(client, register, clock):
+    # 實際玩法：約 60 隻怪、打倒 1 次 Boss、交完全部任務就到 Lv.30 並二轉
+    token = register("real30")
+    assert ranked_and_reason(client, token, make_save(lv=1, kills=0))[0] is True
+    clock.advance(600)
+    assert ranked_and_reason(client, token, make_save(lv=22, kills=40, coins=9000, job="archer"))[0] is True
+    clock.advance(30)   # 一次交了好幾個任務，經驗值一口氣增加
+    save = make_save(lv=30, kills=60, coins=25000, job="hunter", boss=1)
+    save["player"]["exp"] = 500
+    assert ranked_and_reason(client, token, save) == (True, None)
+
+
+# ---------- 多裝置：和最高合理進度（high-water mark）比較 ----------
+def hw_row(username):
+    db = sqlite3.connect(flask_app.config["DB_PATH"])
+    db.row_factory = sqlite3.Row
+    row = db.execute("SELECT saves.* FROM saves JOIN users ON users.id = saves.user_id WHERE username = ?",
+                     (username,)).fetchone()
+    db.close()
+    return row
+
+
+def test_multi_device_older_save_does_not_cause_false_flag(client, register, clock):
+    token = register("twodev")
+    # 裝置 A 正常遊玩並上傳
+    assert ranked_and_reason(client, token, make_save(lv=30, kills=2000, job="knight", boss=2))[0] is True
+    clock.advance(600)
+    # 裝置 B 上傳較舊、較低的進度：允許（照樣存檔、照樣上榜），但不會拉低基準
+    assert ranked_and_reason(client, token, make_save(lv=25, kills=1200, job="warrior", boss=1))[0] is True
+    row = hw_row("twodev")
+    assert row["level"] == 25 and row["kills"] == 1200   # 存的是最新上傳的資料
+    assert (row["hw_kills"], row["hw_boss"], row["hw_exp"]) == (2000, 2, app_module.CUM_EXP[30])
+    clock.advance(10)
+    # 裝置 A 以正常速度繼續（距離 A 上次上傳 610 秒）→ 不會被誤判
+    # （若和上一份存檔比較，10 秒內擊殺 +3800、Boss +4、Lv.25→31 都會被判定過快）
+    assert ranked_and_reason(client, token, make_save(lv=31, kills=5000, job="knight", boss=5)) == (True, None)
+    row = hw_row("twodev")
+    assert (row["hw_kills"], row["hw_boss"]) == (5000, 5)
+    clock.advance(1)
+    # 真的在 1 秒內暴增，和基準比較還是會被抓到
+    assert ranked_and_reason(client, token, make_save(lv=31, kills=5400, job="knight", boss=5)) == (False, "擊殺數增加過快")
+
+
+def test_flagged_save_does_not_advance_high_water(client, register, clock):
+    token = register("nohw")
+    assert ranked_and_reason(client, token, make_save(lv=1, kills=100))[0] is True
+    clock.advance(1)
+    assert ranked_and_reason(client, token, make_save(lv=1, kills=5000))[0] is False
+    assert hw_row("nohw")["hw_kills"] == 100
+    clock.advance(10)
+    # 重新開始 → 解除標記，基準重設成這份存檔
+    assert ranked_and_reason(client, token, make_save(lv=1, kills=3))[0] is True
+    row = hw_row("nohw")
+    assert row["hw_kills"] == 3 and row["hw_kills_ts"] == clock.now
+
+
+def test_constants_cover_frontend_values():
+    # 前端（index.html）目前的數值：一般怪最高 420 經驗、Boss 9000 經驗、Lv.20 之後任務共 33,500 經驗
+    assert app_module.MAX_EXP_PER_KILL >= 420
+    assert app_module.BOSS_EXP_MAX >= 9000
+    assert app_module.QUEST_EXP_ABOVE_FREE >= 2500 + 6000 + 12000 + 10000 + 3000
+    # Boss：5 堆金幣（每堆最多 700）＋ 2 件裝備（最貴 6000 × 0.25 × 傳說 8 倍）
+    assert app_module.COINS_PER_BOSS_MAX >= 5 * 700 + 2 * 6000 * 0.25 * 8
 
 
 def test_progress_decrease_is_allowed(client, register, clock):

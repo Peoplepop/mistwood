@@ -34,7 +34,14 @@ CREATE TABLE IF NOT EXISTS saves (
   boss_kills  INTEGER NOT NULL DEFAULT 0,   -- 第四階段新增
   flagged     INTEGER NOT NULL DEFAULT 0,   -- 第四階段新增
   flag_reason TEXT,                         -- 第四階段新增
-  updated_ts  INTEGER NOT NULL DEFAULT 0    -- 第四階段新增：Unix 時間（秒），用來計算進度速度
+  updated_ts  INTEGER NOT NULL DEFAULT 0,   -- 第四階段新增：Unix 時間（秒）
+  -- 第四階段新增：最高合理進度（high-water mark），每一項記錄數值與達到的時間，用來計算進度速度
+  hw_kills    INTEGER NOT NULL DEFAULT 0,
+  hw_kills_ts INTEGER NOT NULL DEFAULT 0,
+  hw_boss     INTEGER NOT NULL DEFAULT 0,
+  hw_boss_ts  INTEGER NOT NULL DEFAULT 0,
+  hw_exp      INTEGER NOT NULL DEFAULT 0,   -- 累積經驗值
+  hw_exp_ts   INTEGER NOT NULL DEFAULT 0
 );
 
 -- 登入失敗紀錄（用來限制短時間內的猜密碼次數）

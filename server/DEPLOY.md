@@ -48,7 +48,7 @@ cd ~/mistwood/server
 python -m pytest -q
 ```
 
-看到 `46 passed`（全部通過、沒有 failed）就代表正常。
+看到 `50 passed`（全部通過、沒有 failed）就代表正常。
 
 ## 步驟 3：在 Web 分頁建立網站
 

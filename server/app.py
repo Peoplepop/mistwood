@@ -21,6 +21,8 @@ API 一覽（全部使用 JSON，錯誤一律回傳 {"error": "訊息"}）：
     看起來「不太可能」但不是絕對不可能（例如擊殺數太少卻等級很高、短時間內進度暴增）
     → 存檔照樣儲存（絕不弄丟玩家資料），但標記為 flagged，不列入排行榜，回應中 ranked = false。
     被標記後，之後的正常存檔不會自動解除；除非玩家重新開始（等級 ≤ UNFLAG_LEVEL）且存檔合理。
+    進度速度是和「最高合理進度」（high-water mark）比較，不是和上一次存檔比較，
+    所以多裝置輪流上傳（其中一台進度較舊）不會被誤判。
 
 需要登入的 API，前端要在標頭帶上：Authorization: Bearer <token>
 """
@@ -76,20 +78,23 @@ JOBS = set(JOB_MIN_LEVEL)
 # 經驗值曲線（與前端 index.html 的 EXP_TABLE / expToNext 相同）
 EXP_TABLE = [0, 15, 34, 57, 92, 135, 186, 250, 330, 420, 530, 660, 810, 980, 1170, 1380, 1620, 1890, 2190, 2520, 2900]
 EXP_GROWTH = 1.15
-MAX_EXP_PER_KILL = 600          # 單隻怪最多給的經驗值（目前最高 120 的 5 倍，預留給新怪物）
-BOSS_EXP_MAX = 10_000           # 擊敗一次 Boss 最多給的經驗值
+MAX_EXP_PER_KILL = 600          # 單隻一般怪最多給的經驗值（前端目前最高：亡靈騎士 420）
+BOSS_EXP_MAX = 10_000           # 擊敗一次 Boss 最多給的經驗值（前端目前：霧之守衛 9000）
 FREE_EXP_LEVEL = 20             # 升到這個等級所需的經驗值不要求擊殺數
-                                # （任務獎勵，以及第三階段之前的舊存檔沒有記錄擊殺數）
+                                # （前期任務 q1～q6 的獎勵，以及第三階段之前的舊存檔沒有記錄擊殺數）
+QUEST_EXP_ABOVE_FREE = 40_000   # Lv.20 之後任務給的經驗值總和（前端 q7～q11 共 33,500，再加一點寬限）
+                                # ※ 前端新增或調整任務獎勵時，這個數字要跟著更新
 COINS_FREE = 100_000            # 金幣上限 = COINS_FREE + 擊殺數 × COINS_PER_KILL_MAX + Boss 擊殺數 × COINS_PER_BOSS_MAX
-COINS_PER_KILL_MAX = 2_000      # 含掉落裝備拿去商店賣的收入
-COINS_PER_BOSS_MAX = 50_000
-# 和上一次存檔比較的進度速度（用伺服器收到兩次存檔的時間差計算）
+                                # （任務金幣共約 1.8 萬＋任務獎勵裝備賣掉約 1 萬，都在 COINS_FREE 內）
+COINS_PER_KILL_MAX = 2_000      # 平均每隻怪：金幣最多 170 ＋ 掉落裝備賣出的期望值約 220（單件最高 6,000）
+COINS_PER_BOSS_MAX = 50_000     # 每次 Boss：金幣 5 × 700 ＋ 2 件裝備（傳說最高賣 12,000）＝ 最多約 27,500
+# 進度速度：和「最高合理進度」（high-water mark，見 put_save）比較，用伺服器時間計算
 KILLS_PER_SEC_MAX = 5           # 每秒最多擊殺數
 KILLS_SLACK = 300
-BOSS_INTERVAL_SEC = 60          # 平均每 60 秒最多擊敗 1 次 Boss
+BOSS_INTERVAL_SEC = 60          # 平均每 60 秒最多擊敗 1 次 Boss（前端 Boss 重生 180 秒）
 BOSS_SLACK = 3
 EXP_PER_SEC_MAX = KILLS_PER_SEC_MAX * MAX_EXP_PER_KILL + BOSS_EXP_MAX // BOSS_INTERVAL_SEC
-LEVEL_EXP_SLACK = 30_000        # 升級所需經驗值的寬限
+LEVEL_EXP_SLACK = 30_000 + QUEST_EXP_ABOVE_FREE   # 經驗值增加的寬限（含一次交多個任務）
 UNFLAG_LEVEL = 5                # 被標記的帳號，要重新開始（等級 ≤ 5）且存檔合理才解除標記
 
 # ---- 註冊頻率限制（依 IP） ----
@@ -187,13 +192,20 @@ SAVES_NEW_COLUMNS = [
     ("boss_kills", "INTEGER NOT NULL DEFAULT 0"),
     ("flagged", "INTEGER NOT NULL DEFAULT 0"),
     ("flag_reason", "TEXT"),
-    ("updated_ts", "INTEGER NOT NULL DEFAULT 0"),   # Unix 時間（秒），用來計算進度速度
+    ("updated_ts", "INTEGER NOT NULL DEFAULT 0"),   # Unix 時間（秒）
+    # 最高合理進度（high-water mark）：每一項各自記錄「數值」與「達到這個數值的時間」，用來計算進度速度
+    ("hw_kills", "INTEGER NOT NULL DEFAULT 0"),
+    ("hw_kills_ts", "INTEGER NOT NULL DEFAULT 0"),
+    ("hw_boss", "INTEGER NOT NULL DEFAULT 0"),
+    ("hw_boss_ts", "INTEGER NOT NULL DEFAULT 0"),
+    ("hw_exp", "INTEGER NOT NULL DEFAULT 0"),       # 累積經驗值
+    ("hw_exp_ts", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
 def migrate_db(db):
     """把舊版資料庫升級成最新結構（只新增欄位、不動既有資料；重複執行也沒關係）"""
-    have = {row["name"] for row in db.execute("PRAGMA table_info(saves)")}
+    have = {row[1] for row in db.execute("PRAGMA table_info(saves)")}   # row[1] = 欄位名稱
     for name, decl in SAVES_NEW_COLUMNS:
         if name in have:
             continue
@@ -207,6 +219,14 @@ def migrate_db(db):
                 "UPDATE saves SET updated_ts = COALESCE(CAST(strftime('%s', updated_at) AS INTEGER), 0) "
                 "WHERE updated_ts = 0"
             )
+        if name == "hw_exp_ts":   # 最高合理進度：用目前存的數值與最後更新時間當起點
+            db.execute(
+                "UPDATE saves SET hw_kills = kills, hw_kills_ts = updated_ts, hw_boss = boss_kills, "
+                "hw_boss_ts = updated_ts, hw_exp_ts = updated_ts"
+            )
+            for user_id, level in db.execute("SELECT user_id, level FROM saves").fetchall():
+                db.execute("UPDATE saves SET hw_exp = ? WHERE user_id = ?",
+                           (CUM_EXP[min(max(level, 1), LEVEL_MAX)], user_id))
     db.commit()
 
 
@@ -369,7 +389,7 @@ def record_register(ok):
 # ================= 存檔解析（排行榜數值由伺服器自己算） =================
 def extract_scores(save):
     """從存檔 JSON 取出排行榜數值。格式或數值不合理時丟出 ValueError（訊息會回給前端）
-    回傳 (level, kills, gold, job, boss_kills)"""
+    回傳 (level, kills, gold, job, boss_kills, total_exp)"""
     player = save.get("player")
     if not isinstance(player, dict):
         raise ValueError("存檔格式錯誤：缺少角色資料")
@@ -395,18 +415,24 @@ def extract_scores(save):
     job = player.get("job")
     if job not in JOBS:
         job = "novice"
-    return level, kills, gold, job, boss_kills
+
+    # 累積經驗值 = 升到目前等級的經驗值 ＋ 目前等級內的經驗值（exp 格式不對就當作 0，不擋存檔）
+    total_exp = CUM_EXP[level]
+    exp = player.get("exp", 0)
+    if level < LEVEL_MAX and isinstance(exp, (int, float)) and not isinstance(exp, bool) and exp > 0:
+        total_exp += int(min(exp, CUM_EXP[level + 1] - CUM_EXP[level]))
+    return level, kills, gold, job, boss_kills, total_exp
 
 
 def min_kills_for_level(level, boss_kills):
     """升到 level 至少需要的擊殺數（非常寬鬆的下限）"""
-    exp = CUM_EXP[level] - CUM_EXP[FREE_EXP_LEVEL] - boss_kills * BOSS_EXP_MAX
+    exp = CUM_EXP[level] - CUM_EXP[FREE_EXP_LEVEL] - QUEST_EXP_ABOVE_FREE - boss_kills * BOSS_EXP_MAX
     return max(0, -(-exp // MAX_EXP_PER_KILL))   # 無條件進位
 
 
-def plausibility_problem(level, kills, gold, job, boss_kills, prev, now):
+def plausibility_problem(level, kills, gold, job, boss_kills, total_exp, hw, now):
     """檢查存檔是否合理：合理回傳 None，否則回傳簡短原因（存進 flag_reason）。
-    prev 是這個帳號上一次的存檔資料列（沒有就是 None），now 是伺服器目前時間（秒）"""
+    hw 是這個帳號的存檔資料列（用其中的最高合理進度 hw_*；沒有存檔就是 None），now 是伺服器目前時間（秒）"""
     # ---- 只看這份存檔本身 ----
     if level < JOB_MIN_LEVEL[job]:
         return f"職業與等級不符（{job} 需要 Lv.{JOB_MIN_LEVEL[job]}）"
@@ -417,17 +443,39 @@ def plausibility_problem(level, kills, gold, job, boss_kills, prev, now):
     if gold > COINS_FREE + kills * COINS_PER_KILL_MAX + boss_kills * COINS_PER_BOSS_MAX:
         return "金幣與擊殺數不符"
 
-    # ---- 和上一次存檔比較進度速度（數值變少＝玩家重新開始，允許） ----
-    if prev is not None:
-        elapsed = max(0, now - (prev["updated_ts"] or 0))
-        if kills - prev["kills"] > KILLS_PER_SEC_MAX * elapsed + KILLS_SLACK:
+    # ---- 和最高合理進度比較進度速度 ----
+    # 比較對象不是「上一次存檔」：多裝置時，另一台裝置上傳較舊、較低的進度不會拉低基準，
+    # 所以之後原本那台繼續正常上傳，也不會被誤判成「短時間內暴增」。數值比基準低一律允許。
+    if hw is not None:
+        def too_fast(value, base, base_ts, per_sec, slack):
+            elapsed = max(0, now - (base_ts or 0))
+            return value - base > per_sec * elapsed + slack
+        if too_fast(kills, hw["hw_kills"], hw["hw_kills_ts"], KILLS_PER_SEC_MAX, KILLS_SLACK):
             return "擊殺數增加過快"
-        if boss_kills - prev["boss_kills"] > elapsed // BOSS_INTERVAL_SEC + BOSS_SLACK:
+        if too_fast(boss_kills, hw["hw_boss"], hw["hw_boss_ts"], 1 / BOSS_INTERVAL_SEC, BOSS_SLACK):
             return "Boss 擊殺數增加過快"
-        prev_level = min(max(prev["level"], 1), LEVEL_MAX)
-        if level > prev_level and CUM_EXP[level] - CUM_EXP[prev_level] > EXP_PER_SEC_MAX * elapsed + LEVEL_EXP_SLACK:
+        if too_fast(total_exp, hw["hw_exp"], hw["hw_exp_ts"], EXP_PER_SEC_MAX, LEVEL_EXP_SLACK):
             return "等級提升過快"
     return None
+
+
+def next_high_water(row, kills, boss_kills, total_exp, plausible, reset, now):
+    """算出新的最高合理進度（hw_kills, hw_kills_ts, hw_boss, hw_boss_ts, hw_exp, hw_exp_ts）
+    - 存檔合理時：每一項各自取較大值，有變大的那一項才更新時間（較低的舊存檔不會拉低基準）
+    - 存檔不合理時：維持原本的基準
+    - 被標記的帳號重新開始（reset）時：基準重設成這份存檔"""
+    if row is None or reset:
+        if not plausible:   # 第一份存檔就不合理：基準從 0 開始（之後要重新開始才會解除標記）
+            return 0, now, 0, now, 0, now
+        return kills, now, boss_kills, now, total_exp, now
+    out = []
+    for value, key in ((kills, "hw_kills"), (boss_kills, "hw_boss"), (total_exp, "hw_exp")):
+        base, base_ts = row[key], row[key + "_ts"]
+        if plausible and value > base:
+            out += [value, now]
+        else:
+            out += [base, base_ts]
+    return tuple(out)
 
 
 # ================= API =================
@@ -528,25 +576,29 @@ def put_save():
         return error(f"存檔太大（上限 {MAX_SAVE_BYTES // 1024}KB）", 413)
 
     try:
-        level, kills, gold, job, boss_kills = extract_scores(save)
+        level, kills, gold, job, boss_kills, total_exp = extract_scores(save)
     except ValueError as e:
         return error(str(e), 400)
 
     db = get_db()
     now = now_ts()
     prev = db.execute(
-        "SELECT level, kills, boss_kills, flagged, flag_reason, updated_ts FROM saves WHERE user_id = ?",
+        "SELECT flagged, flag_reason, hw_kills, hw_kills_ts, hw_boss, hw_boss_ts, hw_exp, hw_exp_ts "
+        "FROM saves WHERE user_id = ?",
         (user["id"],),
     ).fetchone()
 
     # 合理性檢查：不合理也照樣存檔（不弄丟玩家資料），只是標記起來、不列入排行榜
-    problem = plausibility_problem(level, kills, gold, job, boss_kills, prev, now)
+    problem = plausibility_problem(level, kills, gold, job, boss_kills, total_exp, prev, now)
+    reset = False
     if problem:
         flagged, reason = 1, problem
     elif prev is not None and prev["flagged"] and level > UNFLAG_LEVEL:
         flagged, reason = 1, prev["flag_reason"]   # 之前被標記過：除非重新開始，否則維持標記
     else:
         flagged, reason = 0, None
+        reset = prev is not None and bool(prev["flagged"])   # 被標記的帳號重新開始：解除標記並重設基準
+    hw = next_high_water(prev, kills, boss_kills, total_exp, problem is None, reset, now)
     if problem and not (prev is not None and prev["flagged"] and prev["flag_reason"] == problem):
         app.logger.warning("存檔被標記 user=%s reason=%s lv=%s kills=%s boss=%s gold=%s",
                            user["username"], problem, level, kills, boss_kills, gold)
@@ -555,11 +607,14 @@ def put_save():
     # 有就更新、沒有就新增（SQLite 的 UPSERT 語法）
     db.execute(
         "INSERT INTO saves (user_id, data, level, kills, gold, job, boss_kills, flagged, flag_reason, "
-        "updated_at, updated_ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "updated_at, updated_ts, hw_kills, hw_kills_ts, hw_boss, hw_boss_ts, hw_exp, hw_exp_ts) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, level = excluded.level, kills = excluded.kills, "
         "gold = excluded.gold, job = excluded.job, boss_kills = excluded.boss_kills, flagged = excluded.flagged, "
-        "flag_reason = excluded.flag_reason, updated_at = excluded.updated_at, updated_ts = excluded.updated_ts",
-        (user["id"], text, level, kills, gold, job, boss_kills, flagged, reason, updated_at, now),
+        "flag_reason = excluded.flag_reason, updated_at = excluded.updated_at, updated_ts = excluded.updated_ts, "
+        "hw_kills = excluded.hw_kills, hw_kills_ts = excluded.hw_kills_ts, hw_boss = excluded.hw_boss, "
+        "hw_boss_ts = excluded.hw_boss_ts, hw_exp = excluded.hw_exp, hw_exp_ts = excluded.hw_exp_ts",
+        (user["id"], text, level, kills, gold, job, boss_kills, flagged, reason, updated_at, now, *hw),
     )
     db.commit()
     return jsonify(ok=True, updated_at=updated_at, ranked=not flagged, flag_reason=reason)
