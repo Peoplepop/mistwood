@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="zh-Hant">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>晨霧森林</title>
 <style>
 *{box-sizing:border-box}
-html,body{height:100%;margin:0}
+html,body{height:100%;margin:0;overscroll-behavior:none;touch-action:pan-x pan-y}
 body{background:#0e1714;color:#f1ead8;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei","Heiti TC",system-ui,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 #app{height:100%;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
 #center{display:flex;flex-direction:column;align-items:center;min-width:0}
@@ -148,6 +148,27 @@ body.touch .tab small{display:none}
   .win{position:fixed;top:8px;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:auto;max-height:none}
   .dlg{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));transform:none;width:auto}
 }
+/* 第四階段：設定視窗、觸控選單、直向提示 */
+#menuBtn{display:none;position:relative;font-weight:800;background:rgba(59,84,70,.85)}
+body.touch #menuBtn{display:inline-block}
+body.touch .menus{display:none}
+#menuBtn.dot:after{content:"";position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:#ff6a4a;border:1.5px solid #2b1d07}
+.mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mitem{position:relative;font:inherit;font-weight:900;font-size:15px;padding:14px 6px;border-radius:10px;border:1.5px solid #6f917b;background:#1d2a23;color:#f1ead8;cursor:pointer}
+.mitem small{display:block;font-size:10px;color:#9fbfae;font-weight:700}
+.mitem.dot:after{content:"";position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;background:#ff6a4a;border:1.5px solid #2b1d07}
+.setrow{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:7px;background:rgba(255,255,255,.035);margin-bottom:6px;cursor:pointer;font-weight:700}
+.setrow input[type=checkbox]{width:20px;height:20px;accent-color:#e6a93a;flex:none}
+.rng{width:100%;accent-color:#e6a93a;margin:4px 0 8px;height:24px}
+.wb table.keys{font-size:12.5px;margin:4px 0}
+.wb table.keys td{padding:3px 5px}
+#rotHint{position:fixed;left:0;right:0;margin:0 auto;width:max-content;top:calc(6px + env(safe-area-inset-top));z-index:9;display:none;align-items:center;gap:8px;background:rgba(22,32,27,.95);border:1.5px solid #e6a93a;border-radius:9px;padding:6px 8px 6px 12px;font-size:12.5px;line-height:1.3;max-width:calc(100% - 16px);box-shadow:0 4px 16px rgba(0,0,0,.5)}
+#rotHint.show{display:flex}
+#rotHint span{min-width:0;flex:1 1 auto}
+#rotHint .sb{flex:none}
+#resetBox{display:none;margin-top:6px;padding:8px;border-radius:8px;border:1px solid #8a3b3b;background:rgba(138,59,59,.18)}
+#resetBox.show{display:block}
+#resetBox .note{color:#ffd2c8}
 </style>
 
 <div id="app">
@@ -155,7 +176,7 @@ body.touch .tab small{display:none}
   <div id="center">
     <div id="stage">
       <canvas id="game" aria-label="晨霧森林 遊戲畫面"></canvas>
-      <div id="topbtns"><button class="mini-btn" id="helpBtn">說明</button><button class="mini-btn" id="muteBtn">音效：開</button></div>
+      <div id="topbtns"><button class="mini-btn" id="helpBtn">說明</button><button class="mini-btn" id="muteBtn">音效：開</button><button class="mini-btn" id="menuBtn">選單</button></div>
       <div id="win" class="win" role="dialog" aria-label="遊戲選單"></div>
       <div id="dlg" class="dlg" role="dialog" aria-label="NPC 對話"></div>
     </div>
@@ -200,9 +221,11 @@ body.touch .tab small{display:none}
   <button class="tb big" data-act="attack" style="grid-column:span 2">攻擊</button><button class="tb big" data-act="jump">跳躍</button>
 </div>
 
+<div id="rotHint" role="note"><span>↻ 將手機轉為橫向，畫面更大、更好操作</span><button class="sb alt" id="rotOk">知道了</button></div>
+
 <div id="hint" class="ov show"><div class="card">
   <h1>晨霧森林</h1>
-  <p class="sub">原創 2D 橫向捲軸動作 RPG・第三階段原型</p>
+  <p class="sub">原創 2D 橫向捲軸動作 RPG・第四階段原型</p>
   <table class="keys keyOnly">
     <tr><td>← →</td><td>移動</td></tr>
     <tr><td>↑ ↓</td><td>攀爬繩索（附近沒有繩索時，按 ↓ 趴下）</td></tr>
@@ -213,13 +236,19 @@ body.touch .tab small{display:none}
     <tr><td>↑ / Enter</td><td>靠近 NPC 時對話（也可直接點擊 NPC）</td></tr>
     <tr><td>K / I / E / Q</td><td>技能 / 背包 / 裝備 / 任務視窗（Esc 關閉）</td></tr>
     <tr><td>L / R</td><td>帳號（雲端存檔）/ 排行榜</td></tr>
+    <tr><td>O / Esc</td><td>設定（音量、開視窗是否暫停、按鍵說明）</td></tr>
   </table>
-  <div class="touchOnly note">使用畫面下方按鈕操作：方向鍵移動與攀爬，沒有繩索時按 ▼ 趴下，按住 ▼ 再按「跳躍」可從平台跳下。靠近 NPC 按 ▲ 或點擊 NPC 對話；HUD 的「技能／背包／裝備／任務／帳號」按鈕開啟視窗。</div>
-  <p class="note">怪物掉落的金幣、藥水與裝備，<b>碰觸即自動拾取</b>。到 Lv.10 可找村口的雷歐轉職。開啟視窗或對話時遊戲會暫停。</p>
-  <p class="note">在「帳號」視窗註冊／登入後，進度會自動備份到雲端，並可參加等級、擊殺數、金幣排行榜。不登入也能正常遊玩（進度存在這台裝置）。</p>
+  <div class="touchOnly note">使用畫面兩側（直向時在下方）的按鈕操作：方向鍵移動與攀爬，沒有繩索時按 ▼ 趴下，按住 ▼ 再按「跳躍」可從平台跳下。靠近 NPC 按 ▲ 或點擊 NPC 對話；畫面左上角的「選單」可開啟技能、背包、裝備、任務、帳號、排行榜與設定。建議橫向遊玩。</div>
+  <p class="note">怪物掉落的金幣、藥水與裝備，<b>碰觸即自動拾取</b>。Lv.10 可找村口的雷歐轉職，Lv.30 可再接受二轉試煉。森林最深處的「霧谷遺跡」盡頭有強大的 Boss「霧之守衛」。</p>
+  <p class="note">開啟視窗時遊戲<b>不會暫停</b>（怪物仍會攻擊）；可在設定（O）中改成開視窗時暫停。</p>
+  <p class="note">在「帳號」視窗註冊／登入後，進度會自動備份到雲端，並可參加等級、擊殺數、金幣、Boss 排行榜。不登入也能正常遊玩（進度存在這台裝置）。</p>
   <button class="btn" id="startBtn">開始冒險</button>
   <p class="tip keyOnly">按任意鍵或點擊開始</p>
   <div><button class="link" id="resetBtn">重置進度</button></div>
+  <div id="resetBox">
+    <p class="note"><b>確定要重置進度嗎？</b>這台裝置上的進度會全部清除，無法復原。<br>若已登入雲端帳號，<b>雲端存檔也會在下次同步時（約數秒內）被新的進度覆蓋</b>；帳號不會登出。</p>
+    <div class="acts2" style="justify-content:center"><button class="sb red" id="resetYes">確定重置</button><button class="sb alt" id="resetNo">取消</button></div>
+  </div>
 </div></div>
 
 <div id="death" class="ov"><div class="card">
@@ -246,7 +275,8 @@ const API = apiConfig(location.hostname);   // API.ready = false 時雲端功能
 const API_BASE = API.base;
 
 // ================= 設定與資料 =================
-const WORLD_W = 4800, WORLD_H = 760, GROUND_Y = 700, TOWN_X = 190, DEEP_X = 3600;
+const WORLD_W = 7400, WORLD_H = 760, GROUND_Y = 700, TOWN_X = 190, DEEP_X = 3600;
+const RUIN_X = 4850, ARENA_X = 6700;   // 霧谷遺跡起點、Boss 祭壇（霧之守衛）起點
 const STEP = 1 / 120, GRAV = 2200;
 const PLAYER_NAME = '阿嵐';
 const PLAYER_BASE = { hp: 50, mp: 30, atk: 12, def: 0 };
@@ -256,9 +286,10 @@ const ATTACK = { hitFrom: 0.07, hitTo: 0.2, stabRange: 66, crit: 0.15, critMul: 
 const POTION = { hp: { heal: 60, name: '紅色藥水', price: 25 }, mp: { heal: 40, name: '藍色藥水', price: 30 }, cd: 0.5 };
 // 升到下一級所需經驗（索引 = 目前等級）
 const EXP_TABLE = [0, 15, 34, 57, 92, 135, 186, 250, 330, 420, 530, 660, 810, 980, 1170, 1380, 1620, 1890, 2190, 2520, 2900];
-const JOB_LV = 10, SP_PER_LV = 3, BAG_MAX = 24;
+const JOB_LV = 10, JOB2_LV = 30, SP_PER_LV = 3, BAG_MAX = 24;
 const SLOT_KEYS = ['X', 'A', 'S', 'D'];
-// 職業：成長（Lv.10 之後套用）、轉職加成、普攻手感、外觀
+// 職業：成長（一轉 Lv.10～30、二轉 Lv.30 之後套用）、轉職加成、普攻手感、外觀
+// 二轉職業以 base 指向一轉職業：裝備限制、技能、武器類型都視為同一系（見 jobLine）
 const JOBS = {
   novice:  { name: '新手', growth: PLAYER_GROWTH, bonus: {}, weapon: 'sword',
              atk: { type: 'melee', dur: 0.34, cd: 0.42, range: 74, mult: 1 } },
@@ -271,12 +302,29 @@ const JOBS = {
   mage:    { name: '法師', growth: { hp: 11, mp: 15, atk: 3.5, def: 0.5 }, bonus: { mp: 60 }, weapon: 'staff', starter: 'ostaff',
              desc: '魔力充沛，普攻為短距離魔法彈，並能施放火焰與雷電等範圍法術。',
              atk: { type: 'shot', proj: 'magic', dur: 0.3, cd: 0.45, speed: 620, range: 260, mult: 1.05 } },
+  // 二轉（bonus 已包含一轉加成）
+  knight:  { name: '騎士', base: 'warrior', growth: { hp: 27, mp: 5, atk: 4.3, def: 1.7 }, bonus: { hp: 160, def: 8, atk: 8 }, weapon: 'sword',
+             desc: '守護同伴的重裝騎士。HP 與防禦大幅提升，能衝鋒突刺並召喚天劍。',
+             atk: { type: 'melee', dur: 0.36, cd: 0.44, range: 102, mult: 1.2 } },
+  hunter:  { name: '獵人', base: 'archer', growth: { hp: 18, mp: 8, atk: 4.7, def: 0.9 }, bonus: { atk: 14, crit: 10, hp: 60 }, weapon: 'bow',
+             desc: '精通各種箭術的獵人。能降下箭雨、射出爆裂箭，爆擊更加致命。',
+             atk: { type: 'shot', proj: 'arrow', dur: 0.3, cd: 0.46, speed: 980, range: 540, mult: 1.05 } },
+  wizard:  { name: '巫師', base: 'mage', growth: { hp: 13, mp: 18, atk: 4.4, def: 0.6 }, bonus: { mp: 180, atk: 8, hp: 40 }, weapon: 'staff',
+             desc: '掌握元素奧義的巫師。暴風雪與隕石術能一次殲滅大群敵人。',
+             atk: { type: 'shot', proj: 'magic', dur: 0.28, cd: 0.42, speed: 660, range: 300, mult: 1.15 } },
 };
+const JOB2_OF = { warrior: 'knight', archer: 'hunter', mage: 'wizard' };   // 一轉 → 二轉（id 與後端一致）
+const jobLine = j => (JOBS[j] && JOBS[j].base) || j;                       // 二轉 → 所屬的一轉職業
+const jobFits = (job, list) => !list || list.includes(job) || list.includes(jobLine(job));
 const JOB_LOOK = {
   novice:  { tunic: '#3f8f6b', light: '#56a983', sleeve: '#2f7457', band: '#d9463b', pants: '#3d4f7a', cape: '#d9a63a' },
   warrior: { tunic: '#4f6b9e', light: '#6f8cc0', sleeve: '#3c537c', band: '#d9463b', pants: '#3a3f55', cape: '#c23b3b' },
   archer:  { tunic: '#6a8a3a', light: '#8aab52', sleeve: '#556f2e', band: '#2f6b3a', pants: '#5b4a32', cape: '#b5864f' },
   mage:    { tunic: '#6b4fa0', light: '#8a6fc0', sleeve: '#553d82', band: '#4a3680', pants: '#3d3560', cape: '#3f6fc4' },
+  // 二轉：新配色＋金色飾邊（trim）
+  knight:  { tunic: '#34508c', light: '#9fb4e0', sleeve: '#283d6b', band: '#e6b23a', pants: '#2a2f45', cape: '#eeeaf6', trim: '#f3c45a' },
+  hunter:  { tunic: '#2f6a52', light: '#6fb08f', sleeve: '#245240', band: '#8a3b2a', pants: '#4a3a28', cape: '#3a5a2a', trim: '#e9d39a' },
+  wizard:  { tunic: '#25336e', light: '#5a70c8', sleeve: '#1d2858', band: '#1b1f4f', pants: '#24224a', cape: '#b46be0', trim: '#ffe066' },
 };
 // 技能：type = active 主動 / passive 被動 / buff 增益；req = 前置技能等級
 const SKILLS = {
@@ -310,6 +358,31 @@ const SKILLS = {
              mp: l => 18 + 2 * l, red: l => 15 + 5 * l, desc: l => `60 秒內受到的傷害減少 ${SKILLS.shield.red(l)}%。` },
   thunder: { job: 'mage', name: '雷擊', type: 'active', max: 10, icon: '雷', col: '#ffe066', cd: 1.6, cast: 'thunder', req: { fire: 5 },
              mp: l => 16 + l, mult: l => 1.7 + 0.13 * l, desc: l => `召喚落雷，攻擊前方最多 4 名敵人，造成 ${pct(SKILLS.thunder.mult(l))} 傷害。` },
+  // ---- 二轉技能 ----
+  kguard:  { job: 'knight', name: '鋼鐵意志', type: 'passive', max: 10, icon: '鋼', col: '#c9d4e0',
+             stats: l => ({ def: Math.round(1.5 * l), hp: 25 * l }), desc: l => `防禦 +${Math.round(1.5 * l)}，最大 HP +${25 * l}。` },
+  kbless:  { job: 'knight', name: '守護光環', type: 'buff', max: 5, icon: '護', col: '#fff2a8', cd: 3, cast: 'buff', dur: 60, req: { kguard: 3 },
+             mp: l => 24 + 3 * l, red: l => 8 + 3 * l, atk: l => 4 + 2 * l, desc: l => `60 秒內受到的傷害減少 ${SKILLS.kbless.red(l)}%，攻擊力 +${SKILLS.kbless.atk(l)}%。` },
+  kcharge: { job: 'knight', name: '衝鋒突刺', type: 'active', max: 10, icon: '衝', col: '#6ab8ff', cd: 2.5, cast: 'kcharge',
+             mp: l => 18 + l, mult: l => 2.4 + 0.2 * l, desc: l => `向前衝鋒約 260 距離，貫穿路徑上最多 8 名敵人，造成 ${pct(SKILLS.kcharge.mult(l))} 傷害（衝鋒時不會受傷）。` },
+  kholy:   { job: 'knight', name: '天劍降臨', type: 'active', max: 10, icon: '天', col: '#ffe066', cd: 4, cast: 'kholy', req: { kcharge: 5 },
+             mp: l => 30 + 2 * l, mult: l => 3.4 + 0.25 * l, desc: l => `召喚巨大的光之劍落在前方，波及最多 8 名敵人，造成 ${pct(SKILLS.kholy.mult(l))} 傷害。` },
+  hmaster: { job: 'hunter', name: '獵人本能', type: 'passive', max: 10, icon: '獵', col: '#9fd88a',
+             stats: l => ({ atk: Math.round(1.5 * l), crit: l }), desc: l => `攻擊 +${Math.round(1.5 * l)}，爆擊率 +${l}%。` },
+  hhawk:   { job: 'hunter', name: '鷹眼', type: 'buff', max: 5, icon: '鷹', col: '#ffcf6a', cd: 3, cast: 'buff', dur: 60, req: { hmaster: 3 },
+             mp: l => 22 + 3 * l, atk: l => 8 + 3 * l, desc: l => `60 秒內攻擊力 +${SKILLS.hhawk.atk(l)}%、爆擊率 +5%。` },
+  harrow:  { job: 'hunter', name: '箭雨', type: 'active', max: 10, icon: '雨', col: '#bfe3ff', cd: 3, cast: 'harrow',
+             mp: l => 22 + l, mult: l => 0.95 + 0.08 * l, desc: l => `朝前方降下 3 波箭雨，每波攻擊最多 8 名敵人，造成 ${pct(SKILLS.harrow.mult(l))} 傷害。` },
+  hbomb:   { job: 'hunter', name: '爆裂箭', type: 'active', max: 10, icon: '爆', col: '#ff9a5a', cd: 1.6, cast: 'hbomb', req: { harrow: 5 },
+             mp: l => 20 + l, mult: l => 2.8 + 0.2 * l, desc: l => `射出會爆炸的箭，波及周圍最多 6 名敵人，造成 ${pct(SKILLS.hbomb.mult(l))} 傷害。` },
+  wmaster: { job: 'wizard', name: '元素精通', type: 'passive', max: 10, icon: '元', col: '#9ab0ff',
+             stats: l => ({ atk: Math.round(1.5 * l), mp: 20 * l }), desc: l => `攻擊 +${Math.round(1.5 * l)}，最大 MP +${20 * l}。` },
+  wmana:   { job: 'wizard', name: '魔力湧泉', type: 'buff', max: 5, icon: '泉', col: '#7ee0ff', cd: 3, cast: 'buff', dur: 60, req: { wmaster: 3 },
+             mp: l => 20 + 3 * l, atk: l => 6 + 3 * l, regen: l => 3 + l, desc: l => `60 秒內攻擊力 +${SKILLS.wmana.atk(l)}%，每秒回復 ${SKILLS.wmana.regen(l)} MP。` },
+  wblizz:  { job: 'wizard', name: '暴風雪', type: 'active', max: 10, icon: '冰', col: '#bff2ff', cd: 3.5, cast: 'wblizz',
+             mp: l => 26 + l, mult: l => 0.8 + 0.07 * l, desc: l => `在前方降下暴風雪，4 次冰雹各攻擊最多 8 名敵人，造成 ${pct(SKILLS.wblizz.mult(l))} 傷害並使其緩速。` },
+  wmeteor: { job: 'wizard', name: '隕石術', type: 'active', max: 10, icon: '隕', col: '#ff7a3c', cd: 5, cast: 'wmeteor', req: { wblizz: 5 },
+             mp: l => 36 + 2 * l, mult: l => 4 + 0.3 * l, desc: l => `召喚隕石砸向前方的敵人，爆炸波及最多 10 名敵人，造成 ${pct(SKILLS.wmeteor.mult(l))} 傷害。` },
 };
 // 裝備
 const SLOTS = { weapon: '武器', hat: '帽子', top: '衣服', shoes: '鞋子', acc: '飾品' };
@@ -320,7 +393,9 @@ const RARITY = [
   { name: '普通', color: '#e9e4d4', mul: 1, bonus: 0, sell: 1 },
   { name: '稀有', color: '#6ab8ff', mul: 1.2, bonus: 1, sell: 2 },
   { name: '罕見', color: '#c58bff', mul: 1.4, bonus: 2, sell: 4 },
+  { name: '傳說', color: '#ffc83a', mul: 1.7, bonus: 3, sell: 8 },   // 金色：只會從 Boss 身上掉落
 ];
+const RARITY_RGB = ['233,228,212', '106,184,255', '197,139,255', '255,200,58'];
 const ITEMS = {
   wsword:  { name: '木劍', slot: 'weapon', icon: 'sword', lv: 1, jobs: ['novice', 'warrior'], st: { atk: 4 }, price: 60, col: '#c9955a' },
   isword:  { name: '鐵劍', slot: 'weapon', icon: 'sword', lv: 10, jobs: ['warrior'], st: { atk: 10 }, price: 450, col: '#e9f0f7' },
@@ -342,9 +417,29 @@ const ITEMS = {
   boots:   { name: '皮靴', slot: 'shoes', icon: 'shoe', lv: 8, st: { def: 2, spd: 6 }, price: 220, col: '#7a4f2a' },
   dew:     { name: '晨露項鍊', slot: 'acc', icon: 'neck', lv: 5, st: { hp: 20, mp: 20 }, price: 300, col: '#8ee0ff' },
   stoneh:  { name: '石之心', slot: 'acc', icon: 'gem', lv: 12, st: { atk: 3, def: 3 }, price: 800, col: '#9aa0aa' },
+  // ---- 第四階段：Lv.20～30（drop: true 代表商店沒有賣，只能從怪物身上取得） ----
+  bsword:  { name: '破甲大劍', slot: 'weapon', icon: 'sword', lv: 20, jobs: ['warrior'], st: { atk: 26, def: 3 }, price: 2600, col: '#d8e6ff' },
+  gsword:  { name: '守衛者之刃', slot: 'weapon', icon: 'sword', lv: 28, jobs: ['warrior'], st: { atk: 38, def: 5, hp: 60 }, price: 6000, col: '#9fe8ff', drop: true },
+  rbow:    { name: '遺跡反曲弓', slot: 'weapon', icon: 'bow', lv: 20, jobs: ['archer'], st: { atk: 24, crit: 5 }, price: 2600, col: '#c9b892' },
+  wbow:    { name: '風翼長弓', slot: 'weapon', icon: 'bow', lv: 28, jobs: ['archer'], st: { atk: 35, crit: 8 }, price: 6000, col: '#9ff0e0', drop: true },
+  rstaff:  { name: '符文法杖', slot: 'weapon', icon: 'staff', lv: 20, jobs: ['mage'], st: { atk: 24, mp: 70 }, price: 2600, col: '#7ee0ff' },
+  mstaff:  { name: '霧月法杖', slot: 'weapon', icon: 'staff', lv: 28, jobs: ['mage'], st: { atk: 35, mp: 120 }, price: 6000, col: '#e3d0ff', drop: true },
+  khelm:   { name: '騎士頭盔', slot: 'hat', icon: 'helm', lv: 22, jobs: ['warrior'], st: { def: 9, hp: 70 }, price: 3000, col: '#dfe6f0', drop: true },
+  hhood:   { name: '獵人羽帽', slot: 'hat', icon: 'hood', lv: 22, jobs: ['archer'], st: { def: 6, crit: 5 }, price: 3000, col: '#3f7a5a', drop: true },
+  what:    { name: '巫師尖帽', slot: 'hat', icon: 'wizard', lv: 22, jobs: ['mage'], st: { def: 5, mp: 80 }, price: 3000, col: '#2f3f8f', drop: true },
+  plate:   { name: '遺跡板甲', slot: 'top', icon: 'shirt', lv: 25, jobs: ['warrior'], st: { def: 14, hp: 110 }, price: 4200, col: '#b9c7d6', drop: true },
+  hcoat:   { name: '獵人皮衣', slot: 'top', icon: 'shirt', lv: 25, jobs: ['archer'], st: { def: 9, atk: 6 }, price: 4200, col: '#5a7a3a', drop: true },
+  wrobe:   { name: '星紋長袍', slot: 'top', icon: 'robe', lv: 25, jobs: ['mage'], st: { def: 8, mp: 140 }, price: 4200, col: '#3a3f9a', drop: true },
+  rboots:  { name: '遺跡戰靴', slot: 'shoes', icon: 'shoe', lv: 20, st: { def: 5, spd: 9 }, price: 2200, col: '#7a8a9a' },
+  mistamu: { name: '霧之護符', slot: 'acc', icon: 'neck', lv: 26, st: { atk: 6, def: 6, hp: 60, mp: 60 }, price: 5000, col: '#b9a8ff', drop: true },
 };
-const ETC = { spore: { name: '菇菇孢子', col: '#e2643f' }, shard: { name: '石甲碎片', col: '#9aa0aa' }, fang: { name: '霧狼之牙', col: '#ece8f6' } };
-const SHOP_LIST = ['pot:hp', 'pot:mp', 'wsword', 'cap', 'shirt', 'sandal', 'leather', 'boots', 'isword', 'hbow', 'ostaff'];
+const ETC = {
+  spore: { name: '菇菇孢子', col: '#e2643f' }, shard: { name: '石甲碎片', col: '#9aa0aa' }, fang: { name: '霧狼之牙', col: '#ece8f6' },
+  rune: { name: '古代符文石', col: '#6ad1ff' }, ecto: { name: '霧魂結晶', col: '#c9b8ff' },
+};
+const SHOP_LIST = ['pot:hp', 'pot:mp', 'wsword', 'cap', 'shirt', 'sandal', 'leather', 'boots', 'isword', 'hbow', 'ostaff', 'bsword', 'rbow', 'rstaff', 'rboots'];
+// Boss 掉落池（必定掉落罕見以上，有機率掉落傳說）
+const BOSS_LOOT = ['gsword', 'wbow', 'mstaff', 'plate', 'hcoat', 'wrobe', 'khelm', 'hhood', 'what', 'mistamu'];
 const MONSTERS = {
   moss:   { name: '綠苔蝸', lv: 1, hp: 28,  atk: 6,  def: 0, exp: 5,  speed: 28, w: 36, h: 28, ai: 'wander', coins: [2, 6],   drops: { hp: 0.06, mp: 0.04 }, respawn: 6,
             parts: ['#a6dc6e', '#6f9f40'], equip: [0.05, ['wsword', 'cap', 'shirt', 'sandal']] },
@@ -356,6 +451,16 @@ const MONSTERS = {
             parts: ['#8a84a8', '#c9c4dc'], equip: [0.1, ['isword', 'hbow', 'ostaff', 'ihelm', 'hood', 'mhat', 'chain', 'ranger', 'robe', 'boots', 'stoneh']], etc: ['fang', 0.5] },
   treant: { name: '古樹精', lv: 15, hp: 720, atk: 40, def: 11, exp: 120, speed: 30, chase: 70, aggro: 240, w: 56, h: 70, ai: 'chase', coins: [35, 70], drops: { hp: 0.25, mp: 0.2 }, respawn: 14,
             heavy: true, parts: ['#7a5334', '#5aa262', '#c9ff8a'], equip: [0.14, ['ksword', 'ebow', 'sstaff', 'chain', 'ranger', 'robe', 'ihelm', 'hood', 'mhat', 'stoneh']] },
+  // ---- 霧谷遺跡 ----
+  sentry: { name: '遺跡石偶', lv: 18, hp: 950, atk: 58, def: 15, exp: 190, speed: 35, chase: 85, aggro: 260, w: 46, h: 60, ai: 'chase', coins: [50, 95], drops: { hp: 0.26, mp: 0.22 }, respawn: 12,
+            heavy: true, parts: ['#8a8f9e', '#6ad1ff', '#c9ccd6'], equip: [0.12, ['bsword', 'rbow', 'rstaff', 'rboots', 'ksword', 'ebow', 'sstaff', 'stoneh']], etc: ['rune', 0.5] },
+  wraith: { name: '霧魂', lv: 22, hp: 1400, atk: 72, def: 18, exp: 290, speed: 60, chase: 150, aggro: 340, w: 44, h: 56, ai: 'chase', float: true, coins: [70, 130], drops: { hp: 0.28, mp: 0.26 }, respawn: 11,
+            parts: ['#c9b8ff', '#ffffff', '#8a7ad8'], equip: [0.13, ['rboots', 'khelm', 'hhood', 'what', 'bsword', 'rbow', 'rstaff']], etc: ['ecto', 0.5] },
+  knightm:{ name: '亡靈騎士', lv: 26, hp: 2100, atk: 90, def: 24, exp: 420, speed: 45, chase: 120, aggro: 300, w: 46, h: 68, ai: 'chase', coins: [95, 170], drops: { hp: 0.3, mp: 0.26 }, respawn: 13,
+            heavy: true, parts: ['#4a4f63', '#d8d2c4', '#ff5a5a'], equip: [0.15, ['khelm', 'hhood', 'what', 'plate', 'hcoat', 'wrobe', 'gsword', 'wbow', 'mstaff', 'rboots']] },
+  // Boss：霧之守衛（ai = boss，行為見 updateBoss）
+  guardian: { name: '霧之守衛', lv: 30, hp: 22000, atk: 105, def: 30, exp: 9000, speed: 70, w: 110, h: 150, ai: 'boss', boss: true, coins: [400, 700], drops: { hp: 1, mp: 1 }, respawn: 180,
+            heavy: true, parts: ['#5a6378', '#9fe8ff', '#c9b8ff', '#ffffff'] },
 };
 const PLATFORMS = [
   { x: 0, y: GROUND_Y, w: WORLD_W, ground: true },          // 0 地面
@@ -367,6 +472,11 @@ const PLATFORMS = [
   { x: 3100, y: 355, w: 380 },                               // 10
   { x: 3720, y: 585, w: 380 }, { x: 4280, y: 585, w: 400 },  // 11,12 霧林深處
   { x: 3950, y: 470, w: 420 }, { x: 4450, y: 355, w: 320 },  // 13,14
+  // 霧谷遺跡（ruin = 石造平台）
+  { x: 4950, y: 585, w: 340, ruin: true }, { x: 5480, y: 585, w: 380, ruin: true }, { x: 6050, y: 585, w: 400, ruin: true },   // 15,16,17
+  { x: 5200, y: 470, w: 400, ruin: true }, { x: 5820, y: 470, w: 420, ruin: true },                                          // 18,19
+  { x: 5450, y: 355, w: 380, ruin: true }, { x: 6150, y: 355, w: 320, ruin: true },                                          // 20,21
+  { x: 6860, y: 585, w: 150, ruin: true }, { x: 7160, y: 585, w: 150, ruin: true },                                          // 22,23 Boss 祭壇（躲震波用）
 ];
 const ROPES = [
   { x: 1000, top: 470, bottom: 700 }, { x: 1480, top: 355, bottom: 585 },
@@ -374,6 +484,8 @@ const ROPES = [
   { x: 2900, top: 470, bottom: 700 }, { x: 3300, top: 355, bottom: 585 },
   { x: 3800, top: 585, bottom: 700 }, { x: 4050, top: 470, bottom: 585 },
   { x: 4620, top: 585, bottom: 700 }, { x: 4520, top: 355, bottom: 585 },
+  { x: 5020, top: 585, bottom: 700 }, { x: 5260, top: 470, bottom: 585 }, { x: 5560, top: 355, bottom: 470 },
+  { x: 5900, top: 470, bottom: 700 }, { x: 6200, top: 355, bottom: 470 }, { x: 6400, top: 585, bottom: 700 },
 ];
 const SPAWNS = [
   ['moss', 650, 0], ['moss', 950, 0], ['moss', 1450, 0], ['shroom', 1700, 0], ['moss', 2050, 0], ['shroom', 2550, 0], ['golem', 3150, 0],
@@ -381,12 +493,17 @@ const SPAWNS = [
   ['shroom', 900, 5], ['shroom', 1100, 5], ['shroom', 1850, 6], ['golem', 2020, 6], ['golem', 2850, 7],
   ['golem', 1300, 8], ['shroom', 1500, 8], ['golem', 2280, 9], ['golem', 2480, 9], ['golem', 3250, 10], ['shroom', 3400, 10],
   ['wolf', 3880, 0], ['wolf', 4200, 0], ['treant', 4500, 0], ['wolf', 3880, 11], ['wolf', 4420, 12], ['treant', 4180, 13], ['wolf', 4000, 13], ['treant', 4620, 14],
+  ['sentry', 5350, 0], ['sentry', 5700, 0], ['wraith', 6050, 0], ['knightm', 6400, 0],
+  ['sentry', 5120, 15], ['wraith', 5650, 16], ['knightm', 6250, 17], ['sentry', 5350, 18], ['wraith', 5500, 18],
+  ['wraith', 5950, 19], ['knightm', 6120, 19], ['knightm', 5640, 20], ['wraith', 6300, 21],
+  ['guardian', 7120, 0],
 ].map(([type, x, plat]) => ({ type, x, plat }));
 // 城鎮 NPC
 const NPCS = [
   { id: 'gran', name: '商人 葛蘭', x: 64, shop: true },
   { id: 'ella', name: '村長 艾拉', x: 136 },
   { id: 'leo',  name: '轉職導師 雷歐', x: 432 },
+  { id: 'hilda', name: '遺跡學者 希爾妲', x: 4900 },
 ];
 // 任務：kill 擊殺 / collect 收集 / level 等級；pre = 前置任務
 const QUESTS = [
@@ -414,6 +531,27 @@ const QUESTS = [
     intro: ['森林最右邊的霧林深處住著兇猛的霧狼，還有古老的樹精。', '帶回 8 顆「霧狼之牙」，證明你能在那裡生存。'],
     prog: '霧狼之牙要從霧林深處的霧狼身上取得，那裡的怪物很強，記得帶足藥水。', done: '真是了不起的戰士。這顆石之心是我年輕時的寶物，就交給你了。',
     reward: { exp: 900, coins: 800, item: ['stoneh', 2] } },
+  // ---- 第四階段：霧谷遺跡 ----
+  { id: 'q7', npc: 'hilda', name: '沉睡的遺跡', lv: 16, pre: 'q6', type: 'kill', target: 'sentry', n: 12,
+    intro: ['你是從晨霧村來的冒險者？我是研究這座遺跡的學者希爾妲。', '遺跡裡的石偶不知為何甦醒了，擋住了我的調查。幫我擊倒 12 隻遺跡石偶吧。'],
+    prog: '遺跡石偶就在我身後的遺跡裡，牠們很耐打，小心應戰。', done: '太好了，遺跡安靜多了！這些是調查經費，請收下。',
+    reward: { exp: 2500, coins: 1500, pots: { hp: 20, mp: 10 } } },
+  { id: 'q8', npc: 'hilda', name: '霧魂的低語', lv: 20, pre: 'q7', type: 'collect', item: 'ecto', n: 10,
+    intro: ['遺跡深處徘徊著被霧氣束縛的靈魂——霧魂。', '牠們消散時會留下「霧魂結晶」。帶 10 個回來，我想研究霧氣的來源。'],
+    prog: '霧魂在遺跡中段飄來飄去，速度很快，記得先下手為強。', done: '這些結晶裡封著古老的魔力……謝謝你，這雙戰靴給你。',
+    reward: { exp: 6000, coins: 2500, item: ['rboots', 1] } },
+  { id: 'q9', npc: 'hilda', name: '亡靈騎士團', lv: 24, pre: 'q8', type: 'kill', target: 'knightm', n: 15,
+    intro: ['我查到了！霧氣是祭壇裡的「霧之守衛」散發出來的。', '守衛的部下——亡靈騎士在遺跡最深處巡邏。先擊倒 15 名亡靈騎士，削弱守衛的力量。'],
+    prog: '亡靈騎士在祭壇前方，攻擊力很高，血量不夠就先喝藥水。', done: '騎士團潰散了！這是我在遺跡找到的護符，應該能保護你。',
+    reward: { exp: 12000, coins: 4000, item: ['mistamu', 1] } },
+  { id: 'q10', npc: 'hilda', name: '霧之守衛', lv: 26, pre: 'q9', type: 'kill', target: 'guardian', n: 1,
+    intro: ['終於到了這一步。遺跡最深處的祭壇上，沉睡著巨大的「霧之守衛」。', '牠會衝撞、震地、發射霧彈，血量剩一半時還會狂暴化。準備好了就去擊敗牠吧！'],
+    prog: '霧之守衛在遺跡最右邊的祭壇。看到牠頭上出現「!」就是要出招了：衝撞要跳開、震波要跳過或站上平台。', done: '你真的打倒了霧之守衛！霧谷終於放晴了……這是遺跡的寶物，請收下。',
+    reward: { exp: 10000, coins: 8000, item: ['mistamu', 2] } },
+  { id: 'q11', npc: 'leo', name: '二轉試煉', lv: JOB2_LV, pre: 'q7', job2: true, type: 'collect', item: 'rune', n: 10,
+    intro: ['你已經到達 Lv.30 了，是時候踏上更高的道路。', '霧谷遺跡的石偶體內藏著「古代符文石」。帶 10 個回來，我用它們為你刻下二轉的印記。'],
+    prog: '古代符文石要從霧谷遺跡的遺跡石偶身上取得，帶 10 個回來就能二轉。', done: '符文已經發出光芒了……你準備好接受新的力量了嗎？',
+    reward: { exp: 3000, job2: true } },
 ];
 const SAVE_KEY = 'mistwood_proto_v2', OLD_SAVE_KEY = 'mistwood_proto_v1';
 const FONT = '"Noto Sans TC","PingFang TC","Microsoft JhengHei","Heiti TC",sans-serif';
@@ -437,20 +575,48 @@ const cv = $('game');
 let ctx = cv.getContext('2d');   // 繪製圖示時會暫時切換到離屏畫布
 let VIEW_W = 960, VIEW_H = 540, SCALE = 1;
 
-// ================= 音效 =================
-let AC = null, muted = false;
-try { muted = (localStorage.getItem(SAVE_KEY + '_mute') ?? localStorage.getItem(OLD_SAVE_KEY + '_mute')) === '1'; } catch (e) {}
+// ================= 設定（獨立的 localStorage 鍵值，與存檔分開） =================
+const SET_KEY = 'mistwood_settings';
+const SETTINGS = { pause: false, vol: 0.8, mute: false };   // pause：開視窗時暫停遊戲（預設關閉，和楓之谷一樣）
+try {
+  const o = JSON.parse(localStorage.getItem(SET_KEY) || 'null');
+  if (o && typeof o === 'object') {
+    SETTINGS.pause = o.pause === true; SETTINGS.mute = o.mute === true;
+    if (typeof o.vol === 'number' && isFinite(o.vol)) SETTINGS.vol = Math.min(1, Math.max(0, o.vol));
+  } else SETTINGS.mute = (localStorage.getItem(SAVE_KEY + '_mute') ?? localStorage.getItem(OLD_SAVE_KEY + '_mute')) === '1';   // 沿用舊的靜音設定
+} catch (e) {}
+function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(SETTINGS)); } catch (e) {} }
+
+// ================= 音效（WebAudio 合成，第一次按鍵／點擊時才建立 AudioContext） =================
+let AC = null, AC_OUT = null, NOISE = null;
 function initAudio() {
-  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
-  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; }
+  if (AC) { if (AC.state === 'suspended') AC.resume().catch(() => {}); return; }
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    AC_OUT = AC.createGain(); AC_OUT.connect(AC.destination); applyVolume();
+  } catch (e) { AC = null; AC_OUT = null; }
 }
+const soundOff = () => SETTINGS.mute || SETTINGS.vol <= 0;
+function applyVolume() { if (AC_OUT) AC_OUT.gain.value = soundOff() ? 0 : SETTINGS.vol; }
 function tone(f, d, type = 'square', v = 0.05, f2 = null, delay = 0) {
-  if (!AC || muted) return;
+  if (!AC || soundOff()) return;
   const t = AC.currentTime + delay, o = AC.createOscillator(), g = AC.createGain();
   o.type = type; o.frequency.setValueAtTime(f, t);
   if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d);
   g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-  o.connect(g).connect(AC.destination); o.start(t); o.stop(t + d + 0.03);
+  o.connect(g).connect(AC_OUT); o.start(t); o.stop(t + d + 0.03);
+}
+// 白噪音（經低通濾波）：吼叫、震地、爆炸用
+function noise(d, v = 0.06, freq = 800, delay = 0) {
+  if (!AC || soundOff()) return;
+  if (!NOISE) {
+    NOISE = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+    const a = NOISE.getChannelData(0); for (let i = 0; i < a.length; i++) a[i] = Math.random() * 2 - 1;
+  }
+  const t = AC.currentTime + delay, s = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = NOISE; fl.type = 'lowpass'; fl.frequency.setValueAtTime(freq, t); fl.frequency.exponentialRampToValueAtTime(Math.max(40, freq * 0.3), t + d);
+  g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  s.connect(fl).connect(g).connect(AC_OUT); s.start(t, Math.random() * 0.5); s.stop(t + d + 0.03);
 }
 const SFX = {
   swing: () => tone(620, 0.07, 'triangle', 0.035, 240),
@@ -475,6 +641,18 @@ const SFX = {
   equip: () => { tone(520, 0.06, 'square', 0.03, 780); tone(980, 0.05, 'triangle', 0.025, null, 0.05); },
   click: () => tone(720, 0.03, 'triangle', 0.02),
   talk: () => tone(560, 0.05, 'triangle', 0.025, 700),
+  pickup: () => { tone(660, 0.05, 'triangle', 0.03, 990); tone(1320, 0.07, 'triangle', 0.022, null, 0.05); },
+  // 第四階段：二轉技能、Boss
+  charge: () => { tone(220, 0.28, 'sawtooth', 0.035, 640); noise(0.22, 0.035, 1600); },
+  holy: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.24, 'triangle', 0.032, null, i * 0.05)),
+  rain: () => { for (let i = 0; i < 5; i++) tone(1300 - i * 90, 0.05, 'triangle', 0.02, 520, i * 0.07); },
+  ice: () => { tone(1760, 0.3, 'sine', 0.025, 880); noise(0.45, 0.025, 3500); },
+  meteor: () => tone(900, 0.45, 'sawtooth', 0.028, 110),
+  boom: () => { noise(0.45, 0.09, 520); tone(120, 0.3, 'sine', 0.07, 40); },
+  warn: () => { tone(540, 0.09, 'square', 0.025); tone(540, 0.09, 'square', 0.025, null, 0.14); },
+  roar: () => { noise(0.9, 0.08, 420); tone(110, 0.85, 'sawtooth', 0.045, 52); tone(166, 0.75, 'sawtooth', 0.025, 70, 0.06); },
+  slam: () => { noise(0.4, 0.09, 260); tone(90, 0.35, 'sine', 0.08, 38); },
+  bossDie: () => { noise(1.2, 0.07, 600); [392, 330, 262, 196].forEach((f, i) => tone(f, 0.3, 'triangle', 0.04, null, 0.2 + i * 0.16)); },
 };
 
 // ================= 輸入 =================
@@ -486,11 +664,12 @@ const KEYMAP = {
   KeyX: 'sk1', KeyA: 'sk2', KeyS: 'sk3', KeyD: 'sk4',
   Digit1: 'hp', Digit2: 'mp', Numpad1: 'hp', Numpad2: 'mp',
 };
-const MENU_KEYS = { KeyK: 'skill', KeyI: 'bag', KeyE: 'equip', KeyQ: 'quest', KeyL: 'account', KeyR: 'rank' };
+const MENU_KEYS = { KeyK: 'skill', KeyI: 'bag', KeyE: 'equip', KeyQ: 'quest', KeyL: 'account', KeyR: 'rank', KeyO: 'settings' };
 function setAction(a, on) { if (on && !held[a]) pressed[a] = true; held[a] = on; }
 function releaseAll() { for (const k in held) held[k] = false; for (const k in pressed) pressed[k] = false; document.querySelectorAll('.tb.on').forEach(b => b.classList.remove('on')); }
-// 焦點在輸入框時，按鍵只用來打字，不觸發任何遊戲操作
-const isTyping = t => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+// 焦點在文字輸入框時，按鍵只用來打字，不觸發任何遊戲操作（設定視窗的勾選框／滑桿不算）
+const isTyping = t => !!t && ((t.tagName === 'INPUT' && !/^(checkbox|range|radio|button|submit)$/.test(t.type)) || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+const paused = () => SETTINGS.pause && uiBusy();   // 開視窗時是否暫停遊戲
 addEventListener('keydown', e => {
   if (isTyping(e.target)) {
     if (e.code === 'Escape') { e.preventDefault(); e.target.blur(); closeWin(); }
@@ -502,6 +681,7 @@ addEventListener('keydown', e => {
   if (G.ui.dlg) { if (dlgKey(e)) e.preventDefault(); return; }
   if (G.ui.win) { if (winKey(e)) e.preventDefault(); return; }
   if (MENU_KEYS[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); if (!e.repeat) openWin(MENU_KEYS[e.code]); return; }
+  if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) openWin('settings'); return; }   // 沒有開視窗時 Esc 開啟設定
   if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); if (!e.repeat) tryTalk(); return; }
   const a = KEYMAP[e.code];
   if (a) { e.preventDefault(); setAction(a, true); }
@@ -525,13 +705,17 @@ function setupTouch() {
 // ================= 遊戲狀態 =================
 const G = {
   player: null, monsters: [], drops: [], projs: [], parts: [], texts: [], toasts: [], fxs: [], timers: [],
-  cam: { x: 0, y: 0 }, shake: 0, time: 0, lvlFx: 0, banner: null, intro: 0,
-  hint: true, deathShown: false, saveT: 0, started: false, savedAt: 0,
-  ui: { win: null, dlg: null, sel: { skill: 0, bag: 0, equip: 0, quest: 0, shop: 0 }, shopTab: 'buy', confirm: null },
+  hazards: [],   // Boss 的攻擊判定（震波、霧彈）
+  cam: { x: 0, y: 0 }, shake: 0, time: 0, lvlFx: 0, banner: null, intro: 0, area: '', areaT: 0,
+  hint: true, deathShown: false, saveT: 0, started: false, savedAt: 0, winT: 0, winSig: '',
+  ui: { win: null, dlg: null, sel: { skill: 0, bag: 0, equip: 0, quest: 0, shop: 0 }, shopTab: 'buy', skTab: 1, confirm: null },
 };
+// 重設地圖上的動態物件（讀取雲端存檔、重置進度時使用）
+function resetWorld() { G.drops = []; G.projs = []; G.fxs = []; G.timers = []; G.hazards = []; G.monsters = SPAWNS.map(makeMonster); }
 
 // ---- 數值計算（職業成長 + 轉職加成 + 被動技能 + 裝備 + 增益） ----
-function skillUsable(p, id) { const S = SKILLS[id]; return !!S && (S.job === 'novice' || S.job === p.job); }
+// 新手技能全職業可用；一轉技能在二轉後仍可使用
+function skillUsable(p, id) { const S = SKILLS[id]; return !!S && (S.job === 'novice' || S.job === p.job || S.job === jobLine(p.job)); }
 function sumStats(p) {
   const s = { hp: 0, mp: 0, atk: 0, def: 0, crit: 0, spd: 0 };
   const add = o => { for (const k in o) if (k in s) s[k] += o[k]; };
@@ -541,19 +725,24 @@ function sumStats(p) {
   return s;
 }
 function recalcStats(p) {
-  const J = JOBS[p.job] || JOBS.novice, g0 = PLAYER_GROWTH, g = J.growth;
-  const nl = Math.min(p.lv, JOB_LV) - 1, jl = Math.max(0, p.lv - JOB_LV);
-  const grow = k => PLAYER_BASE[k] + g0[k] * nl + g[k] * jl;
+  // 成長：Lv.1～10 新手、Lv.10～30 一轉職業、Lv.30 之後二轉職業（還沒二轉就繼續用一轉成長）
+  const J = JOBS[p.job] || JOBS.novice, J1 = JOBS[jobLine(p.job)] || JOBS.novice, g0 = PLAYER_GROWTH, two = !!J.base;
+  const nl = Math.min(p.lv, JOB_LV) - 1;
+  const jl = two ? clamp(p.lv - JOB_LV, 0, JOB2_LV - JOB_LV) : Math.max(0, p.lv - JOB_LV), j2 = two ? Math.max(0, p.lv - JOB2_LV) : 0;
+  const grow = k => PLAYER_BASE[k] + g0[k] * nl + J1.growth[k] * jl + (two ? J.growth[k] * j2 : 0);
   const s = sumStats(p), b = p.buffs || {};
   p.maxHp = Math.round(grow('hp') + s.hp);
   p.maxMp = Math.round(grow('mp') + s.mp);
-  let atk = grow('atk') + s.atk;
-  if (b.roar) atk *= 1 + SKILLS.roar.pct(b.roar.lv) / 100;
-  p.atk = Math.round(atk);
+  let mul = 1;
+  if (b.roar) mul += SKILLS.roar.pct(b.roar.lv) / 100;
+  if (b.kbless) mul += SKILLS.kbless.atk(b.kbless.lv) / 100;
+  if (b.hhawk) mul += SKILLS.hhawk.atk(b.hhawk.lv) / 100;
+  if (b.wmana) mul += SKILLS.wmana.atk(b.wmana.lv) / 100;
+  p.atk = Math.round((grow('atk') + s.atk) * mul);
   p.def = Math.floor(grow('def') + s.def);
-  p.crit = Math.min(0.8, ATTACK.crit + (s.crit + (b.focus ? SKILLS.focus.crit(b.focus.lv) : 0)) / 100);
+  p.crit = Math.min(0.8, ATTACK.crit + (s.crit + (b.focus ? SKILLS.focus.crit(b.focus.lv) : 0) + (b.hhawk ? 5 : 0)) / 100);
   p.spd = 1 + (s.spd + (b.focus ? 10 : 0)) / 100;
-  p.dmgRed = b.shield ? SKILLS.shield.red(b.shield.lv) / 100 : 0;
+  p.dmgRed = 1 - (1 - (b.shield ? SKILLS.shield.red(b.shield.lv) / 100 : 0)) * (1 - (b.kbless ? SKILLS.kbless.red(b.kbless.lv) / 100 : 0));
   if (p.hp > p.maxHp) p.hp = p.maxHp;
   if (p.mp > p.maxMp) p.mp = p.maxMp;
 }
@@ -574,9 +763,12 @@ function makePlayer(d) {
     pots: { hp: Math.max(0, Math.floor(num(d.pots && d.pots.hp, 5))), mp: Math.max(0, Math.floor(num(d.pots && d.pots.mp, 3))) },
     inv: 0, hurtT: 0, atkT: 0, atkDur: 0.3, atkCD: 0, atkKind: 'melee', swing: 0, potCD: 0, dropT: 0, dropPlat: null,
     anim: 0, dead: false, deadT: 0, expLoss: 0, prone: false,
-    job: JOBS[d.job] ? d.job : 'novice', sp: 0, skills: {}, keys: [null, null, null, null], cds: {}, buffs: {}, spin: null,
+    job: JOBS[d.job] ? d.job : 'novice', sp: 0, skills: {}, keys: [null, null, null, null], cds: {}, buffs: {}, spin: null, dash: null,
     equip: {}, bag: [], etc: {}, quests: {},
-    stats: { kills: Math.max(0, Math.floor(num(d.stats && d.stats.kills, 0))) },   // 累計擊殺數（舊存檔沒有時從 0 開始）
+    stats: {
+      kills: Math.max(0, Math.floor(num(d.stats && d.stats.kills, 0))),           // 累計擊殺數（舊存檔沒有時從 0 開始）
+      bossKills: Math.max(0, Math.floor(num(d.stats && d.stats.bossKills, 0))),   // Boss 擊殺數（第四階段新增，舊存檔從 0 開始）
+    },
   };
   // 技能：預設風刃斬 Lv.1；技能點未存時依等級補發（舊存檔遷移）
   if (d.skills && typeof d.skills === 'object') for (const id in d.skills) { if (SKILLS[id]) p.skills[id] = clamp(Math.floor(num(d.skills[id], 0)), 0, SKILLS[id].max); }
@@ -601,18 +793,21 @@ function makePlayer(d) {
 function makeMonster(sp) {
   const d = MONSTERS[sp.type], plat = PLATFORMS[sp.plat];
   let minX, maxX;
-  if (plat.ground) { minX = Math.max(480, sp.x - 230); maxX = Math.min(WORLD_W - 30, sp.x + 230); }
+  if (d.boss) { minX = ARENA_X + 70; maxX = WORLD_W - 70; }   // Boss 只在祭壇內活動
+  else if (plat.ground) { minX = Math.max(480, sp.x - 230); maxX = Math.min(sp.x < ARENA_X ? ARENA_X - 40 : WORLD_W - 30, sp.x + 230); }
   else { minX = plat.x + d.w / 2 + 2; maxX = plat.x + plat.w - d.w / 2 - 2; }
   return {
     sp, type: sp.type, d, x: sp.x, y: plat.y, vx: 0, vy: 0, face: Math.random() < 0.5 ? -1 : 1, hp: d.hp,
     minX, maxX, onGround: true, state: 'walk', t: rand(0.5, 3), flash: 0, stun: 0, barT: 0, aggro: 0, chasing: false,
-    dead: false, dying: 0, respawnT: 0, spawnFx: 0.6, anim: Math.random() * 10, squash: 0, lastSwing: -1, stack: 0, stackT: 0,
+    dead: false, dying: 0, dyMax: 0.6, respawnT: 0, spawnFx: 0.6, anim: Math.random() * 10, squash: 0, lastSwing: -1, stack: 0, stackT: 0,
+    chill: 0, boss: null,
   };
 }
 function respawnMonster(m) {
   const plat = PLATFORMS[m.sp.plat];
-  Object.assign(m, { x: m.sp.x, y: plat.y, vx: 0, vy: 0, hp: m.d.hp, dead: false, dying: 0, onGround: true, spawnFx: 0.6, flash: 0, stun: 0, barT: 0, aggro: 0, state: 'idle', t: 1 });
-  burst(m.x, m.y - m.d.h / 2, 10, ['#fff7d6', '#bde8c8'], 120, 'dot');
+  Object.assign(m, { x: m.sp.x, y: plat.y, vx: 0, vy: 0, hp: m.d.hp, dead: false, dying: 0, onGround: true, spawnFx: 0.6, flash: 0, stun: 0, barT: 0, aggro: 0, state: 'idle', t: 1, chill: 0, boss: null });
+  burst(m.x, m.y - m.d.h / 2, m.d.boss ? 40 : 10, ['#fff7d6', '#bde8c8'], m.d.boss ? 260 : 120, 'dot');
+  if (m.d.boss && G.player && G.player.x > RUIN_X) { toast(`${m.d.name}再次出現在祭壇了！`, '#ff9a8e'); SFX.roar(); }
 }
 
 // ================= 物理 =================
@@ -664,9 +859,11 @@ function hitMonster(m, mult, dirX) {
   dmg = Math.max(1, Math.round(dmg - m.d.def));
   m.hp -= dmg; m.flash = 0.12; m.barT = 5; m.aggro = 6;
   const heavy = !!m.d.heavy;
-  m.vx = dirX * (heavy ? (crit ? 120 : 50) : (crit ? 260 : 170));
-  m.stun = heavy ? 0.12 : 0.28;
-  if (heavy) m.face = -dirX;
+  if (!m.d.boss) {   // Boss 不會被擊退或硬直
+    m.vx = dirX * (heavy ? (crit ? 120 : 50) : (crit ? 260 : 170));
+    m.stun = heavy ? 0.12 : 0.28;
+    if (heavy) m.face = -dirX;
+  }
   if (m.stackT <= 0) m.stack = 0;
   const yy = m.y - m.d.h - 14 - m.stack * 24;
   m.stack++; m.stackT = 0.45;
@@ -679,25 +876,50 @@ function hitMonster(m, mult, dirX) {
   if (m.hp <= 0) killMonster(m);
 }
 function killMonster(m) {
-  m.dead = true; m.dying = 0.6; m.respawnT = m.d.respawn; m.hp = 0; m.barT = 0;
+  const d = m.d, p = G.player;
+  m.dead = true; m.dying = m.dyMax = d.boss ? 1.4 : 0.6; m.respawnT = d.respawn; m.hp = 0; m.barT = 0;
   SFX.kill();
-  const d = m.d;
-  burst(m.x, m.y - d.h / 2, 14, d.parts, 220, 'dot');
-  spawnDrop('coin', m.x, m.y - 10, randi(d.coins[0], d.coins[1]));
-  if (Math.random() < d.drops.hp) spawnDrop('hp', m.x, m.y - 10, 1);
-  if (Math.random() < d.drops.mp) spawnDrop('mp', m.x, m.y - 10, 1);
-  if (d.equip && Math.random() < d.equip[0]) spawnDrop('equip', m.x, m.y - 10, rollItem(pick(d.equip[1])));
-  if (d.etc && questNeeds(d.etc[0]) && Math.random() < d.etc[1]) spawnDrop('etc', m.x, m.y - 10, d.etc[0]);
-  G.player.stats.kills++;
+  burst(m.x, m.y - d.h / 2, d.boss ? 60 : 14, d.parts, d.boss ? 420 : 220, 'dot');
+  if (d.boss) bossLoot(m);
+  else {
+    spawnDrop('coin', m.x, m.y - 10, randi(d.coins[0], d.coins[1]));
+    if (Math.random() < d.drops.hp) spawnDrop('hp', m.x, m.y - 10, 1);
+    if (Math.random() < d.drops.mp) spawnDrop('mp', m.x, m.y - 10, 1);
+    if (d.equip && Math.random() < d.equip[0]) spawnDrop('equip', m.x, m.y - 10, rollItem(pick(d.equip[1])));
+    if (d.etc && questNeeds(d.etc[0]) && Math.random() < d.etc[1]) spawnDrop('etc', m.x, m.y - 10, d.etc[0]);
+  }
+  p.stats.kills++;
+  if (d.boss) { p.stats.bossKills++; G.hazards = []; SFX.bossDie(); addShake(12); }
   questKill(m.type);
   gainExp(d.exp);
+  if (d.boss) {
+    G.banner = { title: '討伐成功！', sub: `擊敗了 ${d.name}（Boss 擊殺 ${p.stats.bossKills} 次）`, t: 0, life: 3.4 };
+    toast(`${d.name}將在 ${Math.round(d.respawn / 60)} 分鐘後再次出現`, '#d8cfb4');
+    persist(true);   // Boss 擊殺立即同步雲端（排行榜）
+  }
 }
-// 在矩形範圍內打擊最多 maxT 隻怪物（由近到遠）
-function areaHit(x1, y1, x2, y2, mult, maxT) {
+// Boss 掉落：大量金幣、藥水，必定掉落 1 件適合自己職業的罕見以上裝備（25% 傳說），另有 1 件隨機裝備
+function bossLoot(m) {
+  const p = G.player, d = m.d;
+  for (let i = 0; i < 5; i++) spawnDrop('coin', m.x + rand(-40, 40), m.y - 40, randi(d.coins[0], d.coins[1]));
+  for (let i = 0; i < 3; i++) { spawnDrop('hp', m.x, m.y - 40, 1); spawnDrop('mp', m.x, m.y - 40, 1); }
+  const mine = BOSS_LOOT.filter(b => jobFits(p.job, ITEMS[b].jobs));
+  spawnDrop('equip', m.x, m.y - 50, rollItem(pick(mine.length ? mine : BOSS_LOOT), Math.random() < 0.25 ? 3 : 2));
+  spawnDrop('equip', m.x, m.y - 50, rollItem(pick(BOSS_LOOT), Math.random() < 0.1 ? 3 : Math.random() < 0.6 ? 2 : 1));
+}
+// 在矩形範圍內打擊最多 maxT 隻怪物（由近到遠）；chill > 0 時使其緩速 chill 秒
+function areaHit(x1, y1, x2, y2, mult, maxT, chill) {
   const p = G.player;
   const list = G.monsters.filter(m => !m.dead && m.spawnFx <= 0 && overlap(x1, y1, x2, y2, m.x - m.d.w / 2, m.y - m.d.h, m.x + m.d.w / 2, m.y))
     .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x)).slice(0, maxT);
-  for (const m of list) hitMonster(m, mult, m.x < p.x ? -1 : 1);
+  for (const m of list) { hitMonster(m, mult, m.x < p.x ? -1 : 1); if (chill && !m.dead) m.chill = chill; }
+  return list.length;
+}
+// 以 (cx, cy) 為中心、半徑 r 的範圍攻擊（爆炸類）
+function aoeHit(cx, cy, r, mult, maxT) {
+  const list = G.monsters.filter(m => !m.dead && m.spawnFx <= 0 && Math.abs(m.x - cx) < r + m.d.w / 2 && Math.abs(m.y - m.d.h / 2 - cy) < r + m.d.h / 2)
+    .sort((a, b) => Math.abs(a.x - cx) - Math.abs(b.x - cx)).slice(0, maxT);
+  for (const m of list) hitMonster(m, mult, m.x < cx ? -1 : 1);
   return list.length;
 }
 function gainExp(n) {
@@ -717,19 +939,23 @@ function levelUp() {
   toast(`HP 上限 +${p.maxHp - oh}　MP 上限 +${p.maxMp - om}　攻擊 +${p.atk - oa}`, '#9ff0c8');
   toast(`獲得技能點 +${SP_PER_LV}（按 K 分配）`, '#ffd56b');
   if (p.lv === JOB_LV && p.job === 'novice') toast('已達 Lv.10！可以到村口找轉職導師雷歐轉職', '#ffe066');
+  if (p.lv === JOB2_LV && JOB2_OF[p.job]) toast('已達 Lv.30！可以找轉職導師雷歐接受二轉試煉', '#ffe066');
   for (const Q of QUESTS) if (Q.type === 'level' && qActive(Q) && p.lv === Q.n) toast(`任務「${Q.name}」目標達成，回去找 NPC 回報吧`, '#9ff0c8');
   persist(true);   // 升級時立即同步雲端
   burst(p.x, p.y - 30, 30, ['#fff7c2', '#ffd23e', '#ffffff'], 300, 'star', -80);
   SFX.level(); addShake(4);
   persist();
 }
-function hurtPlayer(m) {
+function hurtPlayer(m) { hurtPlayerBy(m.d.atk, m.x); }
+// 玩家受到攻擊力 atk 的傷害，從 sx 的方向被擊退
+function hurtPlayerBy(atk, sx) {
   const p = G.player;
-  const dmg = Math.max(1, Math.round((m.d.atk * rand(0.9, 1.1) - p.def) * (1 - p.dmgRed)));
+  if (p.dead || p.dash) return;   // 衝鋒突刺途中無敵
+  const dmg = Math.max(1, Math.round((atk * rand(0.9, 1.1) - p.def) * (1 - p.dmgRed)));
   p.hp = Math.max(0, p.hp - dmg);
   ftext(p.x, p.y - 64, String(dmg), '#c58bff', 24, '#22083a', 1.0);
   p.inv = 1.3; p.hurtT = 0.28; p.atkT = 0; p.rope = null; p.spin = null;
-  p.vx = (p.x < m.x ? -1 : 1) * 260; p.vy = -330; p.onGround = false; p.plat = null;
+  p.vx = (p.x < sx ? -1 : 1) * 260; p.vy = -330; p.onGround = false; p.plat = null;
   SFX.hurt(); addShake(3);
   burst(p.x, p.y - 28, 6, ['#ffffff', p.dmgRed > 0 ? '#86c0ff' : '#c58bff'], 180);
   if (p.hp <= 0) die();
@@ -752,7 +978,7 @@ function respawn() {
   if (!p.dead) return;
   p.exp = Math.max(0, p.exp - p.expLoss); p.expLoss = 0;
   p.buffs = {}; recalcStats(p);
-  Object.assign(p, { dead: false, deadT: 0, hp: Math.ceil(p.maxHp * 0.5), mp: Math.max(p.mp, Math.ceil(p.maxMp * 0.5)), x: TOWN_X, y: GROUND_Y, vx: 0, vy: 0, inv: 2, rope: null, onGround: false, face: 1, atkT: 0, hurtT: 0, prone: false });
+  Object.assign(p, { dead: false, deadT: 0, hp: Math.ceil(p.maxHp * 0.5), mp: Math.max(p.mp, Math.ceil(p.maxMp * 0.5)), x: TOWN_X, y: GROUND_Y, vx: 0, vy: 0, inv: 2, rope: null, onGround: false, face: 1, atkT: 0, hurtT: 0, prone: false, dash: null });
   G.deathShown = false; $('death').classList.remove('show');
   G.cam.x = clamp(p.x - VIEW_W / 2, 0, WORLD_W - VIEW_W);
   G.cam.y = clamp(p.y - VIEW_H * 0.62, 0, WORLD_H - VIEW_H);
@@ -856,6 +1082,62 @@ const CAST = {
     }));
     SFX.thunder(); addShake(3.5);
   },
+  // ---- 二轉技能 ----
+  kcharge(p, lv, S) {   // 衝鋒突刺：向前衝刺，打擊路徑上的敵人
+    p.atkT = 0.4; p.atkDur = 0.4; p.atkCD = 0.42; p.atkKind = 'thrust';
+    const f = p.face, x0 = p.x, y0 = p.y;
+    p.dash = { t: 0.24, v: f * 1080 };
+    later(0.14, () => { if (!p.dead) areaHit(Math.min(x0, x0 + f * 270) - 10, y0 - 76, Math.max(x0, x0 + f * 270) + 10, y0 + 6, S.mult(lv), 8); });
+    G.fxs.push({ type: 'dash', x: x0, y: y0 - 28, dir: f, t: 0, life: 0.45, len: 270 });
+    SFX.charge(); addShake(4);
+  },
+  kholy(p, lv, S) {   // 天劍降臨：巨劍從天而降
+    p.atkT = 0.45; p.atkDur = 0.45; p.atkCD = 0.46; p.atkKind = 'cast';
+    const tx = p.x + p.face * 150, ty = p.y;
+    G.fxs.push({ type: 'skysword', x: tx, y: ty, t: 0, life: 0.75 });
+    later(0.26, () => {
+      if (p.dead) return;
+      areaHit(tx - 150, ty - 160, tx + 150, ty + 10, S.mult(lv), 8);
+      burst(tx, ty - 10, 26, ['#ffffff', '#fff2a8', '#ffd23e'], 360, 'star', -40);
+      addShake(7); SFX.slam();
+    });
+    SFX.holy();
+  },
+  harrow(p, lv, S) {   // 箭雨：前方降下 3 波箭雨
+    p.atkT = 0.4; p.atkDur = 0.4; p.atkCD = 0.42; p.atkKind = 'cast';
+    const cx = p.x + p.face * 230, cy = p.y;
+    G.fxs.push({ type: 'rain', x: cx, y: cy, t: 0, life: 1.0, w: 330, seed: Math.random() * 99 });
+    [0.22, 0.47, 0.72].forEach(t => later(t, () => { if (!p.dead) { areaHit(cx - 165, cy - 170, cx + 165, cy + 10, S.mult(lv), 8); addShake(1.5); } }));
+    SFX.rain(); later(0.25, SFX.rain); later(0.5, SFX.rain);
+  },
+  hbomb(p, lv, S) {   // 爆裂箭：命中後爆炸
+    p.atkT = 0.36; p.atkDur = 0.36; p.atkCD = 0.38; p.atkKind = 'shot';
+    const dir = p.face;
+    later(0.1, () => { if (!p.dead) { fireProj({ kind: 'bomb', x: p.x + dir * 20, y: p.y - 28, dir, speed: 900, range: 560, mult: S.mult(lv), hw: 18, hh: 12, aoe: 100, maxT: 6 }); SFX.shoot(); } });
+  },
+  wblizz(p, lv, S) {   // 暴風雪：4 次冰雹並緩速
+    p.atkT = 0.4; p.atkDur = 0.4; p.atkCD = 0.42; p.atkKind = 'cast';
+    const cx = p.x + p.face * 210, cy = p.y;
+    G.fxs.push({ type: 'blizz', x: cx, y: cy, t: 0, life: 1.05, w: 380, seed: Math.random() * 99 });
+    [0.15, 0.35, 0.55, 0.75].forEach(t => later(t, () => { if (!p.dead) areaHit(cx - 190, cy - 175, cx + 190, cy + 10, S.mult(lv), 8, 2.5); }));
+    SFX.ice(); later(0.4, SFX.ice);
+  },
+  wmeteor(p, lv, S) {   // 隕石術：砸向前方最近的敵人
+    p.atkT = 0.45; p.atkDur = 0.45; p.atkCD = 0.46; p.atkKind = 'cast';
+    const f = p.face;
+    const tgt = G.monsters.filter(m => !m.dead && m.spawnFx <= 0 && (m.x - p.x) * f > 20 && (m.x - p.x) * f < 420 && Math.abs(m.y - p.y) < 170)
+      .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+    const tx = tgt ? tgt.x : p.x + f * 230, ty = tgt ? tgt.y : p.y;
+    G.fxs.push({ type: 'meteor', x: tx, y: ty, dir: f, t: 0, life: 0.48 });
+    later(0.46, () => {
+      if (p.dead) return;
+      aoeHit(tx, ty - 40, 150, S.mult(lv), 10);
+      G.fxs.push({ type: 'boom', x: tx, y: ty - 30, t: 0, life: 0.5, r: 150 });
+      burst(tx, ty - 20, 34, ['#fff3a6', '#ffb23e', '#ff5a36', '#7a2a0a'], 420, 'spark');
+      addShake(9); SFX.boom();
+    });
+    SFX.meteor();
+  },
   buff(p, lv, S, id) {
     p.atkT = 0.3; p.atkDur = 0.3; p.atkCD = 0.3; p.atkKind = 'cast';
     p.buffs[id] = { t: S.dur, lv };
@@ -873,7 +1155,7 @@ function skillReqOk(p, id) {
 }
 function learnBlock(p, id) {
   const S = SKILLS[id], lv = p.skills[id] || 0;
-  if (!skillUsable(p, id)) return `轉職為${JOBS[S.job].name}後開放`;
+  if (!skillUsable(p, id)) return `${JOBS[S.job].base ? '二轉' : '轉職'}為${JOBS[S.job].name}後開放`;
   if (lv >= S.max) return '已達等級上限';
   if (!skillReqOk(p, id)) return '前置技能等級不足';
   if (p.sp <= 0) return '技能點不足';
@@ -915,9 +1197,11 @@ function sellPrice(it) { return Math.max(1, Math.round(ITEMS[it.b].price * 0.25 
 function equipBlock(p, it) {
   const B = ITEMS[it.b];
   if (p.lv < B.lv) return `需要 Lv.${B.lv}`;
-  if (B.jobs && !B.jobs.includes(p.job)) return `限 ${B.jobs.map(j => JOBS[j].name).join('／')} 使用`;
+  if (!jobFits(p.job, B.jobs)) return `限 ${jobsText(B.jobs)} 使用`;
   return '';
 }
+// 職業限制文字：一轉職業同時列出對應的二轉（例：劍士／騎士）
+function jobsText(list) { return list.map(j => JOBS[j].name + (JOB2_OF[j] ? '／' + JOBS[JOB2_OF[j]].name : '')).join('、'); }
 function afterEquipChange(p) { recalcStats(p); persist(); }
 function equipItem(idx) {
   const p = G.player, it = p.bag[idx];
@@ -968,7 +1252,7 @@ function buy(key, qty = 1) {
 const questById = id => QUESTS.find(Q => Q.id === id);
 function qActive(Q) { const s = G.player.quests[Q.id]; return !!s && s.s === 'active'; }
 function qDone(Q) { const s = G.player.quests[Q.id]; return !!s && s.s === 'done'; }
-function qAvail(Q) { const p = G.player; return !p.quests[Q.id] && p.lv >= Q.lv && (!Q.pre || qDone(questById(Q.pre))); }
+function qAvail(Q) { const p = G.player; return !p.quests[Q.id] && p.lv >= Q.lv && (!Q.pre || qDone(questById(Q.pre))) && (!Q.job2 || !!JOB2_OF[p.job]); }
 function qProgress(Q) {
   const p = G.player, s = p.quests[Q.id];
   if (!s) return 0;
@@ -1011,6 +1295,7 @@ function rewardText(Q) {
   if (r.pots) for (const k in r.pots) a.push(`${POTION[k].name} ×${r.pots[k]}`);
   if (r.item) a.push(r.item[0] === 'jobhat' ? `職業專屬帽子（${RARITY[r.item[1]].name}）` : `${ITEMS[r.item[0]].name}（${RARITY[r.item[1]].name}）`);
   if (r.job) a.push('轉職＋職業武器');
+  if (r.job2) a.push('二轉（能力加成＋二轉技能）');
   return a.join('、');
 }
 function acceptQuest(Q) {
@@ -1022,33 +1307,43 @@ function completeQuest(Q, job) {
   const p = G.player, r = Q.reward;
   if (Q.type === 'collect') { p.etc[Q.item] = Math.max(0, (p.etc[Q.item] || 0) - Q.n); if (!p.etc[Q.item]) delete p.etc[Q.item]; }
   p.quests[Q.id] = { s: 'done', k: Q.n, tr: false };
-  if (r.job && job) { if (r.exp) gainExp(r.exp); changeJob(job); }   // 先給經驗，讓轉職橫幅不被升級橫幅蓋掉
+  const newJob = r.job2 ? JOB2_OF[p.job] : r.job ? job : null;
+  if (newJob) { if (r.exp) gainExp(r.exp); changeJob(newJob); }   // 先給經驗，讓轉職橫幅不被升級橫幅蓋掉
   if (r.coins) { p.coins += r.coins; toast(`獲得 ${r.coins} 金幣`, '#ffd56b'); }
   if (r.pots) for (const k in r.pots) { p.pots[k] += r.pots[k]; toast(`獲得 ${POTION[k].name} ×${r.pots[k]}`, k === 'hp' ? '#ff9a8e' : '#8ec8ff'); }
   if (r.item) {
-    const b = r.item[0] === 'jobhat' ? ({ warrior: 'ihelm', archer: 'hood', mage: 'mhat' }[p.job] || 'cap') : r.item[0];
+    const b = r.item[0] === 'jobhat' ? ({ warrior: 'ihelm', archer: 'hood', mage: 'mhat' }[jobLine(p.job)] || 'cap') : r.item[0];
     const it = rollItem(b, r.item[1]);
     p.bag.push(it); toast(`獲得 ${itemName(it)}（${RARITY[it.r].name}）`, RARITY[it.r].color);
   }
-  if (!r.job) G.banner = { title: '任務完成！', sub: `「${Q.name}」`, t: 0, life: 2.4 };
+  if (!newJob) G.banner = { title: '任務完成！', sub: `「${Q.name}」`, t: 0, life: 2.4 };
   SFX.quest();
-  if (r.exp && !r.job) gainExp(r.exp);
+  if (r.exp && !newJob) gainExp(r.exp);
   persist(true);   // 完成任務／轉職時立即同步雲端
 }
 function changeJob(j) {
-  const p = G.player;
+  const p = G.player, two = !!JOBS[j].base;   // two = 二轉（武器與裝備沿用，不另外發武器）
   p.job = j;
   for (const k of SLOT_ORDER) { const it = p.equip[k]; if (it && equipBlock(p, it)) { delete p.equip[k]; p.bag.push(it); } }
-  const old = p.equip.weapon;
-  if (old) p.bag.push(old);
-  p.equip.weapon = rollItem(JOBS[j].starter, 0);
+  if (!two) {
+    const old = p.equip.weapon;
+    if (old) p.bag.push(old);
+    p.equip.weapon = rollItem(JOBS[j].starter, 0);
+  }
   recalcStats(p);
   p.hp = p.maxHp; p.mp = p.maxMp;
   G.lvlFx = 2.4;
-  G.banner = { title: '轉職成功！', sub: `${PLAYER_NAME} 成為了${JOBS[j].name}`, t: 0, life: 3 };
-  toast(`獲得並裝備了 ${ITEMS[JOBS[j].starter].name}`, '#ffd56b');
-  toast('新的職業技能已開放（按 K 查看）', '#ffe066');
-  burst(p.x, p.y - 30, 40, ['#fff7c2', '#ffd23e', JOB_LOOK[j].light], 320, 'star', -80);
+  G.banner = { title: two ? '二轉成功！' : '轉職成功！', sub: `${PLAYER_NAME} 成為了${JOBS[j].name}`, t: 0, life: 3 };
+  if (two) {
+    const b = JOBS[j].bonus;
+    toast(`二轉加成：${STAT_ORDER.filter(k => b[k]).map(k => STAT_NAMES[k] + fmtStat(k, b[k])).join('、')}`, '#ffd56b');
+    toast('二轉技能已開放（按 K，切換到「二轉」分頁）', '#ffe066');
+    G.ui.skTab = 2; G.ui.sel.skill = 0;
+  } else {
+    toast(`獲得並裝備了 ${ITEMS[JOBS[j].starter].name}`, '#ffd56b');
+    toast('新的職業技能已開放（按 K 查看）', '#ffe066');
+  }
+  burst(p.x, p.y - 30, two ? 60 : 40, ['#fff7c2', '#ffd23e', JOB_LOOK[j].light], two ? 380 : 320, 'star', -80);
   SFX.level(); addShake(4);
 }
 
@@ -1071,6 +1366,7 @@ function tryTalk() { const n = nearNpc(); if (n) talkTo(n); }
 function talkTo(n) {
   const p = G.player;
   if (!p || p.dead) return;
+  if (G.ui.win) closeWin();
   p.face = n.x < p.x ? -1 : 1; p.vx = 0;
   SFX.talk();
   const qs = QUESTS.filter(Q => Q.npc === n.id);
@@ -1087,8 +1383,21 @@ function npcChat(n) {
   const p = G.player;
   if (n.id === 'leo') {
     if (p.job === 'novice' && p.lv < JOB_LV) return `我是轉職導師雷歐。等你到達 Lv.${JOB_LV}，就來接受轉職試煉吧。（目前 Lv.${p.lv}）`;
-    if (p.job !== 'novice') return `${JOBS[p.job].name}之路才剛開始。記得用技能點強化你的職業技能。`;
+    if (JOBS[p.job].base) return `了不起的${JOBS[p.job].name}……你已經走得比我還遠了。繼續精進吧！`;
+    if (p.job !== 'novice') {
+      const j2 = JOBS[JOB2_OF[p.job]];
+      if (p.lv < JOB2_LV) return `${JOBS[p.job].name}之路才剛開始。到 Lv.${JOB2_LV} 再來找我，我會教你成為${j2.name}。（目前 Lv.${p.lv}）`;
+      if (!qDone(questById('q7'))) return `你已經有資格二轉了。先到霧林深處更右邊的「霧谷遺跡」，幫學者希爾妲完成「沉睡的遺跡」，再回來找我。`;
+      return `${JOBS[p.job].name}之路才剛開始。記得用技能點強化你的職業技能。`;
+    }
     return '準備好了就來找我。';
+  }
+  if (n.id === 'hilda') {
+    if (QUESTS.filter(Q => Q.npc === 'hilda').every(qDone)) return '霧谷終於放晴了。不過守衛似乎會再次甦醒……想挑戰的話，祭壇就在遺跡最右邊。';
+    const next = QUESTS.find(Q => Q.npc === 'hilda' && !p.quests[Q.id]);
+    if (next && next.pre && !qDone(questById(next.pre))) return `我在調查這座遺跡。等你完成「${questById(next.pre).name}」，我有事想拜託你。`;
+    if (next && p.lv < next.lv) return `遺跡深處很危險，等你到 Lv.${next.lv} 再來找我吧。`;
+    return '這座遺跡曾是古代王國的祭壇，霧氣就是從最深處湧出來的。';
   }
   if (n.id === 'ella') {
     if (QUESTS.filter(Q => Q.npc === 'ella').every(qDone)) return '多虧有你，晨霧村又恢復了平靜。';
@@ -1109,6 +1418,14 @@ function dlgTurnIn(n, Q) {
   const p = G.player;
   if (Q.reward.item && p.bag.length >= BAG_MAX) return openDlg(n, ['你的背包已經滿了，整理一下再來領取獎勵吧。']);
   if (Q.reward.job) return openDlg(n, [Q.done], [{ label: '選擇職業', fn: () => dlgJob(n, Q) }, { label: '再想想', fn: closeDlg }]);
+  if (Q.reward.job2) {
+    const J2 = JOBS[JOB2_OF[p.job]];
+    if (!J2) return openDlg(n, ['你目前的職業無法二轉。']);
+    return openDlg(n, [Q.done, `【${J2.name}】${J2.desc}\n二轉後一轉技能與裝備都能繼續使用。確定要成為${J2.name}嗎？`], [
+      { label: `成為${J2.name}`, fn: () => { closeDlg(); completeQuest(Q); } },
+      { label: '再想想', fn: closeDlg },
+    ]);
+  }
   openDlg(n, [Q.done, `獎勵：${rewardText(Q)}`], [{ label: '完成任務', fn: () => { closeDlg(); completeQuest(Q); } }]);
 }
 function dlgJob(n, Q) {
@@ -1131,6 +1448,7 @@ function updatePlayer(dt) {
   let buffEnd = false;
   for (const k in p.buffs) { p.buffs[k].t -= dt; if (p.buffs[k].t <= 0) { delete p.buffs[k]; buffEnd = true; toast(`「${SKILLS[k].name}」效果結束`, '#d8cfb4'); } }
   if (buffEnd) recalcStats(p);
+  if (p.buffs.wmana && !p.dead) p.mp = Math.min(p.maxMp, p.mp + SKILLS.wmana.regen(p.buffs.wmana.lv) * dt);   // 魔力湧泉：持續回復 MP
   if (p.dead) {
     p.deadT += dt;
     if (!p.onGround) { const py = p.y; p.vy = Math.min(p.vy + GRAV * dt, PHYS.maxFall); p.y += p.vy * dt; const pl = landOn(p, py, null); if (pl) { p.y = pl.y; p.vy = 0; p.onGround = true; p.plat = pl; } }
@@ -1202,6 +1520,11 @@ function updatePlayer(dt) {
     } else { p.vy = -PHYS.jump; p.onGround = false; p.plat = null; SFX.jump(); }
   }
 
+  if (p.dash) {   // 衝鋒突刺：固定速度前進，結束時急停
+    p.dash.t -= dt; p.vx = p.dash.v;
+    if (Math.random() < 0.6) G.parts.push({ x: p.x - p.face * 10, y: p.y - rand(8, 48), vx: -p.face * rand(40, 120), vy: 0, t: 0, life: 0.3, color: pick(['#bfe3ff', '#ffffff', '#6ab8ff']), size: rand(2, 3.5), type: 'dot', grav: 0 });
+    if (p.dash.t <= 0) { p.dash = null; p.vx *= 0.15; }
+  }
   const prevY = p.y;
   if (!p.onGround) { p.vy = Math.min(p.vy + GRAV * dt, PHYS.maxFall); p.y += p.vy * dt; }
   p.x = clamp(p.x + p.vx * dt, 12, WORLD_W - 12);
@@ -1232,8 +1555,9 @@ function updateMonster(m, dt) {
     else { m.respawnT -= dt; if (m.respawnT <= 0) respawnMonster(m); }
     return;
   }
+  if (m.d.boss) { updateBoss(m, dt); return; }
   const d = m.d, p = G.player;
-  m.anim += dt; m.flash -= dt; m.barT -= dt; m.aggro -= dt; m.stackT -= dt;
+  m.anim += dt; m.flash -= dt; m.barT -= dt; m.aggro -= dt; m.stackT -= dt; m.chill = Math.max(0, m.chill - dt);
   m.spawnFx = Math.max(0, m.spawnFx - dt); m.squash = Math.max(0, m.squash - dt * 4);
   m.chasing = false;
   if (m.stun > 0) { m.stun -= dt; m.vx = approach(m.vx, 0, 700 * dt); }
@@ -1256,7 +1580,7 @@ function updateMonster(m, dt) {
   }
   const prevY = m.y;
   if (!m.onGround) { m.vy = Math.min(m.vy + GRAV * dt, PHYS.maxFall); m.y += m.vy * dt; }
-  m.x += m.vx * dt;
+  m.x += m.vx * dt * (m.chill > 0 ? 0.45 : 1);   // 暴風雪緩速
   if (m.x < m.minX) { m.x = m.minX; if (!m.chasing) m.face = 1; if (d.ai === 'hop' && !m.onGround) m.vx = Math.abs(m.vx); }
   if (m.x > m.maxX) { m.x = m.maxX; if (!m.chasing) m.face = -1; if (d.ai === 'hop' && !m.onGround) m.vx = -Math.abs(m.vx); }
   if (!m.onGround) {
@@ -1270,16 +1594,134 @@ function updateMonster(m, dt) {
   }
 }
 
+// ================= 更新：Boss（霧之守衛） =================
+// 招式：衝撞（charge）、震地震波（slam）、霧彈齊射（volley）；出招前會有預兆（tele），HP 剩一半時狂暴化（phase 2）
+const BOSS = { charge: 640, waveSpd: 430, waveLen: 600, orbSpd: 300, leash: 6 };
+function bossInit(m) { m.boss = { st: 'idle', t: 2, phase: 1, away: 0, tele: null, teleMax: 1, rep: 0, last: '' }; }
+function bossEngaged() { const p = G.player; return !!p && !p.dead && p.x > ARENA_X - 30; }
+function bossChoose(m) {
+  const p = G.player, B = m.boss, far = Math.abs(p.x - m.x) > 260;
+  let opts = (far ? ['charge', 'volley', 'charge', 'slam'] : ['slam', 'slam', 'volley', 'charge']).filter(o => o !== B.last);
+  const a = pick(opts);
+  B.last = a; B.st = 'tele'; B.tele = a;
+  B.t = B.teleMax = (a === 'charge' ? 0.85 : a === 'slam' ? 0.95 : 0.75) / (B.phase === 2 ? 1.3 : 1);
+  B.rep = a === 'charge' && B.phase === 2 ? 2 : 1;
+  m.face = p.x < m.x ? -1 : 1; m.vx = 0;
+  SFX.warn();
+}
+function bossAct(m) {
+  const B = m.boss, d = m.d, p = G.player, ph2 = B.phase === 2;
+  if (B.tele === 'charge') { B.st = 'charge'; B.t = 0.95; SFX.charge(); }
+  else if (B.tele === 'slam') {
+    B.st = 'recover'; B.t = 0.85;
+    const wave = () => {
+      if (m.dead) return;
+      addShake(9); SFX.slam();
+      burst(m.x, m.y - 4, 22, ['#c9b8ff', '#e8e4f0', '#8a7ad8'], 300, 'dot', 500);
+      for (const dir of [-1, 1]) G.hazards.push({ type: 'wave', x: m.x + dir * 50, dir, dist: 0, max: BOSS.waveLen, spd: BOSS.waveSpd * (ph2 ? 1.2 : 1), atk: d.atk * 1.05, hit: false, t: 0 });
+    };
+    wave(); if (ph2) later(0.5, wave);
+  } else if (B.tele === 'volley') {
+    B.st = 'recover'; B.t = 1;
+    const n = ph2 ? 7 : 5, ox = m.x + m.face * 30, oy = m.y - 96;
+    const base = Math.atan2((p.y - 28) - oy, p.x - ox);
+    for (let i = 0; i < n; i++) later(i * 0.09, () => {
+      if (m.dead) return;
+      const a = base + (i - (n - 1) / 2) * 0.17;
+      G.hazards.push({ type: 'orb', x: ox, y: oy, vx: Math.cos(a) * BOSS.orbSpd * (ph2 ? 1.15 : 1), vy: Math.sin(a) * BOSS.orbSpd * (ph2 ? 1.15 : 1), r: 11, atk: d.atk * 0.8, t: 0, life: 3.5 });
+      SFX.magic();
+    });
+  }
+  B.tele = null;
+}
+function updateBoss(m, dt) {
+  const d = m.d, p = G.player;
+  if (!m.boss) bossInit(m);
+  const B = m.boss, eng = bossEngaged();
+  m.anim += dt; m.flash -= dt; m.barT -= dt; m.stackT -= dt; m.chill = 0;
+  m.spawnFx = Math.max(0, m.spawnFx - dt);
+  // 玩家離開祭壇（或倒下）一段時間：Boss 回復全部體力
+  if (!eng) {
+    B.away += dt;
+    if (B.away > BOSS.leash && (m.hp < d.hp || B.phase > 1)) { m.hp = d.hp; bossInit(m); toast(`${d.name}恢復了全部體力`, '#d8cfb4'); }
+  } else B.away = 0;
+  if (B.phase === 1 && m.hp <= d.hp / 2) {   // 狂暴化
+    B.phase = 2; B.st = 'roar'; B.t = 1.3; B.tele = null; m.vx = 0;
+    G.banner = { title: '狂暴化！', sub: `${d.name}被激怒了，攻擊變得更快更猛烈`, t: 0, life: 2.4 };
+    SFX.roar(); addShake(10);
+    burst(m.x, m.y - d.h / 2, 40, ['#ff6a8a', '#c9b8ff', '#ffffff'], 380, 'star', -40);
+  }
+  const ph2 = B.phase === 2;
+  B.t -= dt;
+  switch (B.st) {
+    case 'idle':
+      if (eng) {
+        const dx = p.x - m.x;
+        m.face = dx < 0 ? -1 : 1;
+        m.vx = Math.abs(dx) > 110 ? m.face * d.speed * (ph2 ? 1.4 : 1) : 0;
+        if (B.t <= 0) bossChoose(m);
+      } else {   // 走回原位
+        const hx = m.sp.x - m.x;
+        m.vx = Math.abs(hx) > 6 ? Math.sign(hx) * d.speed : 0;
+        if (m.vx) m.face = Math.sign(hx);
+      }
+      break;
+    case 'tele':
+      m.vx = 0;
+      if (B.tele === 'charge' && eng && B.t > B.teleMax * 0.4) m.face = p.x < m.x ? -1 : 1;   // 預兆前半段仍會轉向玩家
+      if (B.t <= 0) bossAct(m);
+      break;
+    case 'charge':
+      m.vx = m.face * BOSS.charge * (ph2 ? 1.2 : 1);
+      if (Math.random() < 0.7) G.parts.push({ x: m.x - m.face * 40, y: m.y - rand(0, 10), vx: -m.face * rand(60, 160), vy: rand(-80, -20), t: 0, life: 0.5, color: pick(['#c9b8ff', '#e8dcc0', '#8a84a8']), size: rand(3, 6), type: 'dot', grav: 200 });
+      if (B.t <= 0 || (m.face < 0 && m.x <= m.minX + 1) || (m.face > 0 && m.x >= m.maxX - 1)) {
+        m.vx = 0; addShake(5);
+        if (--B.rep > 0 && eng) { B.st = 'tele'; B.tele = 'charge'; B.t = B.teleMax = 0.5; m.face = p.x < m.x ? -1 : 1; SFX.warn(); }
+        else { B.st = 'recover'; B.t = 0.75; }
+      }
+      break;
+    default:   // recover / roar
+      m.vx = 0;
+      if (B.t <= 0) { B.st = 'idle'; B.t = ph2 ? rand(0.8, 1.3) : rand(1.4, 2.1); }
+  }
+  m.x = clamp(m.x + m.vx * dt, m.minX, m.maxX);
+  m.y = GROUND_Y; m.onGround = true;
+  // 接觸傷害（衝撞時更痛）；判定頂端低於祭壇平台，站在平台上不會被碰到
+  if (!p.dead && p.inv <= 0 && m.spawnFx <= 0) {
+    const pw = p.w / 2 - 2, mw = d.w / 2 - 12, ph = p.prone ? 22 : p.h;
+    if (overlap(p.x - pw, p.y - ph + 6, p.x + pw, p.y, m.x - mw, m.y - d.h + 44, m.x + mw, m.y)) hurtPlayerBy(d.atk * (B.st === 'charge' ? 1.4 : 1), m.x);
+  }
+}
+// Boss 的攻擊判定：震波（沿地面前進，跳起來或站上平台可躲開）、霧彈（直線飛行）
+function updateHazards(dt) {
+  const p = G.player;
+  for (const h of G.hazards) {
+    h.t += dt;
+    if (h.type === 'wave') {
+      const s = h.spd * dt;
+      h.x += h.dir * s; h.dist += s;
+      if (h.x < ARENA_X - 80 || h.x > WORLD_W) h.dist = h.max;
+      if (Math.random() < 0.5) G.parts.push({ x: h.x, y: GROUND_Y - rand(0, 6), vx: h.dir * rand(20, 80), vy: rand(-160, -60), t: 0, life: 0.4, color: pick(['#c9b8ff', '#e8dcc0', '#ffffff']), size: rand(2, 4), type: 'dot', grav: 500 });
+      if (!h.hit && !p.dead && p.inv <= 0 && !p.rope && p.y > GROUND_Y - 34 && Math.abs(p.x - h.x) < 22) { h.hit = true; hurtPlayerBy(h.atk, h.x - h.dir * 30); }
+    } else {
+      h.x += h.vx * dt; h.y += h.vy * dt;
+      if (Math.random() < 0.6) G.parts.push({ x: h.x, y: h.y, vx: rand(-20, 20), vy: rand(-20, 20), t: 0, life: 0.35, color: pick(['#c9b8ff', '#8a7ad8', '#ffffff']), size: rand(2, 3.5), type: 'dot', grav: 0 });
+      if (!p.dead && p.inv <= 0 && Math.hypot(p.x - h.x, p.y - 26 - h.y) < h.r + 14) { h.t = h.life; hurtPlayerBy(h.atk, h.x); burst(h.x, h.y, 10, ['#c9b8ff', '#ffffff'], 180); }
+      else if (h.y > GROUND_Y || h.x < ARENA_X - 400 || h.x > WORLD_W) { h.t = h.life; burst(h.x, Math.min(h.y, GROUND_Y - 4), 6, ['#c9b8ff', '#8a7ad8'], 120); }
+    }
+  }
+  G.hazards = G.hazards.filter(h => h.type === 'wave' ? h.dist < h.max : h.t < h.life);
+}
+
 // ================= 更新：投射物 / 掉落 / 粒子 =================
-const PROJ_TRAIL = { wind: ['#bff7ec', '#5fd6bf'], magic: ['#e3d0ff', '#9a7aff'], fire: ['#ffd23e', '#ff7a3c'], bigarrow: ['#d8ffc8', '#8fe36a'] };
+const PROJ_TRAIL = { wind: ['#bff7ec', '#5fd6bf'], magic: ['#e3d0ff', '#9a7aff'], fire: ['#ffd23e', '#ff7a3c'], bigarrow: ['#d8ffc8', '#8fe36a'], bomb: ['#ffd23e', '#ff7a3c', '#7a2a0a'] };
 function explode(pr) {
   const r = pr.aoe;
-  const list = G.monsters.filter(m => !m.dead && m.spawnFx <= 0 && Math.abs(m.x - pr.x) < r + m.d.w / 2 && Math.abs(m.y - m.d.h / 2 - pr.y) < r + m.d.h / 2)
-    .sort((a, b) => Math.abs(a.x - pr.x) - Math.abs(b.x - pr.x)).slice(0, 5);
-  for (const m of list) hitMonster(m, pr.mult, m.x < pr.x ? -1 : 1);
+  aoeHit(pr.x, pr.y, r, pr.mult, pr.maxT || 5);
   G.fxs.push({ type: 'boom', x: pr.x, y: pr.y, t: 0, life: 0.35, r });
   burst(pr.x, pr.y, 18, ['#fff3a6', '#ffb23e', '#ff5a36'], 260, 'spark');
-  addShake(3); SFX.fire();
+  addShake(pr.kind === 'bomb' ? 4.5 : 3);
+  if (pr.kind === 'bomb') SFX.boom(); else SFX.fire();
   pr.pierce = 0;
 }
 function updateProjs(dt) {
@@ -1328,11 +1770,13 @@ function updateDrops(dt) {
       if (d.kind === 'equip') {
         const it = d.value, col = RARITY[it.r].color;
         p.bag.push(it); toast(`獲得 ${itemName(it)}（${RARITY[it.r].name}）`, col);
-        ftext(p.x, p.y - 70, `+${itemName(it)}`, col, 15, '#111', 0.9, { small: true }); SFX.equip();
+        ftext(p.x, p.y - 70, `+${itemName(it)}`, col, 15, '#111', 0.9, { small: true });
+        if (it.r >= 3) { SFX.quest(); toast('★ 獲得傳說裝備！', '#ffc83a'); burst(p.x, p.y - 30, 30, ['#fff3a6', '#ffc83a', '#ffffff'], 300, 'star', -60); }
+        else SFX.pickup();
       } else if (d.kind === 'etc') {
         p.etc[d.value] = (p.etc[d.value] || 0) + 1;
         toast(`獲得 ${ETC[d.value].name} ×1（共 ${p.etc[d.value]}）`, '#ffe9a8');
-        ftext(p.x, p.y - 70, `+${ETC[d.value].name}`, '#ffe9a8', 15, '#111', 0.9, { small: true }); SFX.coin();
+        ftext(p.x, p.y - 70, `+${ETC[d.value].name}`, '#ffe9a8', 15, '#111', 0.9, { small: true }); SFX.pickup();
         questCollected(d.value);
       } else if (d.kind === 'coin') { p.coins += d.value; toast(`+${d.value} 金幣`, '#ffd56b'); ftext(p.x, p.y - 70, `+${d.value} 金幣`, '#ffd56b', 15, '#3a2604', 0.9, { small: true }); SFX.coin(); }
       else { p.pots[d.kind]++; const nm = POTION[d.kind].name; toast(`獲得 ${nm} ×1`, d.kind === 'hp' ? '#ff9a8e' : '#8ec8ff'); ftext(p.x, p.y - 70, `+${nm}`, d.kind === 'hp' ? '#ff9a8e' : '#8ec8ff', 15, '#111', 0.9, { small: true }); SFX.pot(); }
@@ -1374,15 +1818,24 @@ function update(dt) {
     if (due.length) { G.timers = G.timers.filter(t => t.t > 0); due.forEach(t => t.fn()); }
   }
   updatePlayer(dt);
-  if (G.ui.win || G.ui.dlg) return;   // 對話開啟的那一刻停止推進
+  if (paused()) return;   // 設定為「開視窗時暫停」時，對話開啟的那一刻停止推進
   for (const m of G.monsters) updateMonster(m, dt);
+  updateHazards(dt);
   updateProjs(dt);
   updateDrops(dt);
   updateFx(dt);
   updateCamera(dt, false);
+  // 對話中走遠了就自動結束對話
+  const dl = G.ui.dlg;
+  if (dl && dl.n && Math.abs(G.player.x - dl.n.x) > 160) closeDlg();
+  // 進入新區域時顯示區域名稱
+  const ar = areaOf(G.player.x);
+  if (ar !== G.area) { if (G.area && (ar === '霧谷遺跡' || ar === '守衛祭壇' || ar === '霧林深處')) G.areaT = 3; G.area = ar; }
+  G.areaT = Math.max(0, G.areaT - dt);
   G.saveT += dt;
   if (G.saveT > 10) { G.saveT = 0; persist(); }
 }
+function areaOf(x) { return x < 330 ? '晨霧村' : x < DEEP_X ? '晨霧森林' : x < RUIN_X ? '霧林深處' : x < ARENA_X ? '霧谷遺跡' : '守衛祭壇'; }
 
 // ================= 繪圖工具 =================
 function rr(x, y, w, h, r) {
@@ -1418,6 +1871,28 @@ function buildTerrain() {
     }
     t.fillStyle = deep ? '#467a6c' : '#5aa262'; t.beginPath(); t.arc(x - 10, GROUND_Y - h - 30, 40, 0, Math.PI * 2); t.fill();
   });
+  // 霧谷遺跡：背景的斷柱
+  [4990, 5270, 5640, 5990, 6330, 6580].forEach((x, i) => {
+    const h = 150 + hash(i + 40) * 150, w = 34, top = GROUND_Y - h;
+    t.fillStyle = '#5d6170'; t.fillRect(x - w / 2, top, w, h);
+    t.fillStyle = '#4a4e5c'; t.fillRect(x + w / 2 - 8, top, 8, h);
+    t.fillStyle = '#6d7282'; for (let y = top + 14; y < GROUND_Y; y += 24) t.fillRect(x - w / 2, y, w, 2);
+    t.fillStyle = '#727788'; t.fillRect(x - w / 2 - 6, GROUND_Y - 16, w + 12, 16);
+    t.fillStyle = '#5d6170'; t.beginPath(); t.moveTo(x - w / 2, top); t.lineTo(x - w / 2 + 9, top - 12); t.lineTo(x, top - 4); t.lineTo(x + 7, top - 17); t.lineTo(x + w / 2, top); t.closePath(); t.fill();
+    t.strokeStyle = '#4b6a4a'; t.lineWidth = 2.5; t.beginPath(); t.moveTo(x - 12, top + 4); t.quadraticCurveTo(x + 16, top + h * 0.4, x - 8, top + h * 0.7); t.stroke();
+    t.fillStyle = '#5a8a52'; for (let k = 0; k < 4; k++) t.fillRect(x - 10 + hash(i * 5 + k) * 18, top + 10 + k * h * 0.17, 5, 3);
+  });
+  // 祭壇入口的石拱門與盡頭的符文石牆
+  const gx = ARENA_X;
+  t.fillStyle = '#545868'; t.fillRect(gx - 74, GROUND_Y - 330, 40, 330); t.fillRect(gx + 34, GROUND_Y - 330, 40, 330);
+  t.fillStyle = '#444858'; t.fillRect(gx - 42, GROUND_Y - 330, 8, 330); t.fillRect(gx + 66, GROUND_Y - 330, 8, 330);
+  t.fillStyle = '#626677'; t.beginPath(); t.moveTo(gx - 84, GROUND_Y - 330); t.lineTo(gx + 84, GROUND_Y - 330); t.lineTo(gx + 84, GROUND_Y - 356); t.quadraticCurveTo(gx, GROUND_Y - 420, gx - 84, GROUND_Y - 356); t.closePath(); t.fill();
+  t.fillStyle = '#9fe8ff'; t.beginPath(); t.arc(gx, GROUND_Y - 362, 9, 0, Math.PI * 2); t.fill();
+  const wx = WORLD_W - 64;
+  t.fillStyle = '#4a4e5c'; t.fillRect(wx, 0, 64, GROUND_Y);
+  t.fillStyle = '#3c404d'; for (let y = 10; y < GROUND_Y; y += 30) t.fillRect(wx, y, 64, 3);
+  t.strokeStyle = 'rgba(159,232,255,.55)'; t.lineWidth = 3; t.beginPath(); t.arc(wx + 32, GROUND_Y - 220, 24, 0, Math.PI * 2);
+  t.moveTo(wx + 32, GROUND_Y - 250); t.lineTo(wx + 32, GROUND_Y - 190); t.moveTo(wx + 8, GROUND_Y - 220); t.lineTo(wx + 56, GROUND_Y - 220); t.stroke();
   // 小屋（晨霧村）
   const hx = 30, hy = GROUND_Y;
   t.fillStyle = '#d9c3a0'; t.fillRect(hx, hy - 86, 130, 86);
@@ -1452,12 +1927,13 @@ function buildTerrain() {
   t.fillStyle = '#62b34c'; t.fillRect(0, GROUND_Y, WORLD_W, 8);
   t.fillStyle = '#8fd16a'; t.fillRect(0, GROUND_Y, WORLD_W, 2);
   t.fillStyle = '#3f8a3a'; for (let x = 0; x < WORLD_W; x += 7) t.fillRect(x, GROUND_Y + 12, 3, 2 + hash(x) * 6);
-  for (let x = 0; x < WORLD_W; x += 9) {
+  for (let x = 0; x < RUIN_X - 30; x += 9) {
     const h = 3 + hash(x * 0.37) * 6; t.fillStyle = hash(x + 3) < 0.5 ? '#62b34c' : '#4fa244';
     t.fillRect(x, GROUND_Y - h, 2, h); t.fillRect(x + 3, GROUND_Y - h * 0.6, 2, h * 0.6);
   }
   for (let i = 0; i < 70; i++) {
     const x = hash(i * 3.3) * WORLD_W;
+    if (x > RUIN_X - 40) continue;
     t.fillStyle = '#3f8a3a'; t.fillRect(x, GROUND_Y - 8, 2, 8);
     t.fillStyle = ['#fff2a8', '#ffb3c7', '#c9b8ff', '#ffffff'][i % 4]; t.fillRect(x - 2, GROUND_Y - 12, 6, 5);
     t.fillStyle = '#f3c45a'; t.fillRect(x, GROUND_Y - 11, 2, 2);
@@ -1466,10 +1942,32 @@ function buildTerrain() {
     const cols = ['#3f7f45', '#4f9a52', '#5aac5c'];
     for (let k = 0; k < 4; k++) { t.fillStyle = cols[k % 3]; t.beginPath(); t.arc(x + k * 16 - 24, GROUND_Y - 10 - (k % 2) * 6, 16 - (k === 3 ? 4 : 0), Math.PI, 0); t.fill(); }
   });
+  // 霧谷遺跡的地面：石板路與深色地底
+  const rx = RUIN_X - 30;
+  t.fillStyle = '#4e4a55'; t.fillRect(rx, GROUND_Y, WORLD_W - rx, WORLD_H - GROUND_Y);
+  for (let i = 0; i < 260; i++) { const x = rx + hash(i + 300) * (WORLD_W - rx), y = GROUND_Y + 16 + hash(i + 301) * (WORLD_H - GROUND_Y - 16); t.fillStyle = hash(i + 302) < 0.5 ? '#433f4a' : '#5d5966'; t.fillRect(x | 0, y | 0, 3 + ((hash(i + 303) * 5) | 0), 2); }
+  for (let x = rx; x < WORLD_W; x += 46) {
+    t.fillStyle = hash(x) < 0.5 ? '#8a8796' : '#7d7a89'; t.fillRect(x, GROUND_Y, 44, 13);
+    t.fillStyle = '#a9a6b4'; t.fillRect(x, GROUND_Y, 44, 2);
+    t.fillStyle = '#5d5a66'; t.fillRect(x + 44, GROUND_Y, 2, 13); t.fillRect(x, GROUND_Y + 13, 46, 2);
+    if (hash(x + 7) < 0.3) { t.fillStyle = '#5a8a52'; t.fillRect(x + 6 + hash(x + 9) * 26, GROUND_Y - 2, 9, 3); }
+  }
+  for (let x = ARENA_X - 40; x < WORLD_W - 64; x += 92) { t.fillStyle = 'rgba(159,232,255,.25)'; t.fillRect(x + 20, GROUND_Y + 4, 30, 3); }   // 祭壇地面的符文
   // 浮空平台
   for (const p of PLATFORMS) {
     if (p.ground) continue;
     const { x, y, w } = p, h = 24;
+    if (p.ruin) {   // 石造平台：石磚、裂縫、垂下的碎石與苔蘚
+      t.beginPath(); t.moveTo(x, y + 12); t.lineTo(x + w, y + 12); t.lineTo(x + w - 8, y + h - 2);
+      for (let bx = x + w - 14; bx > x + 10; bx -= 14) t.lineTo(bx, y + h - 2 + hash(bx + 1) * 12);
+      t.lineTo(x + 8, y + h - 2); t.closePath(); t.fillStyle = '#5d5a66'; t.fill(); t.strokeStyle = '#2f2d38'; t.lineWidth = 2; t.stroke();
+      t.fillStyle = '#7d7a89'; t.fillRect(x - 3, y - 3, w + 6, 16); t.strokeStyle = '#2f2d38'; t.strokeRect(x - 3, y - 3, w + 6, 16);
+      for (let bx = x; bx < x + w; bx += 32) { const bw = Math.min(30, x + w - bx - 1); if (bw < 4) continue; t.fillStyle = hash(bx + y) < 0.5 ? '#8a8796' : '#75727f'; t.fillRect(bx + 1, y - 1, bw, 6); t.fillRect(bx + 16 > x + w ? bx : bx + 1, y + 6, Math.max(2, bw - 2), 5); }
+      t.fillStyle = '#b3b0bd'; t.fillRect(x - 3, y - 3, w + 6, 2);
+      t.strokeStyle = '#4a4752'; t.lineWidth = 1.5; for (let i = 0; i < w / 60; i++) { const cx = x + 12 + hash(i + x) * (w - 24); t.beginPath(); t.moveTo(cx, y - 2); t.lineTo(cx + 4, y + 4); t.lineTo(cx, y + 11); t.stroke(); }
+      t.fillStyle = '#5a8a52'; for (let i = 0; i < w / 45; i++) t.fillRect(x + 6 + hash(i * 3 + x) * (w - 18), y - 4, 10, 3);
+      continue;
+    }
     t.beginPath(); t.moveTo(x, y + 4); t.lineTo(x + w, y + 4); t.lineTo(x + w - 6, y + h - 6);
     for (let bx = x + w - 12; bx > x + 8; bx -= 12) t.lineTo(bx, y + h - 4 + hash(bx) * 10);
     t.lineTo(x + 6, y + h - 6); t.closePath();
@@ -1536,6 +2034,11 @@ function drawBackground() {
   const mg = ctx.createLinearGradient(0, base - 70, 0, base + 30);
   mg.addColorStop(0, 'rgba(246,236,226,0)'); mg.addColorStop(0.6, 'rgba(246,236,226,.55)'); mg.addColorStop(1, 'rgba(246,236,226,.25)');
   ctx.fillStyle = mg; ctx.fillRect(0, base - 70, VIEW_W, 100);
+  // 霧谷遺跡：天色轉為灰紫；祭壇附近再帶一點暗紅
+  const mid = cx + VIEW_W / 2;
+  const rk = clamp((mid - (RUIN_X - 500)) / 700, 0, 1), ak = clamp((mid - (ARENA_X - 400)) / 500, 0, 1);
+  if (rk > 0) { ctx.fillStyle = `rgba(52,44,78,${0.42 * rk})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+  if (ak > 0) { ctx.fillStyle = `rgba(80,20,50,${0.2 * ak})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
 }
 
 // ================= 繪製：玩家 =================
@@ -1599,7 +2102,7 @@ function drawWizardHat(x, y, s, wave, col = '#4a3680') {
   ctx.fillStyle = '#ffe066'; ctx.fillRect(x - 10 * s, y - 4.5 * s, 21 * s, 2.5 * s);
 }
 function drawHero(p) {
-  const st = heroState(p), t = G.time, ph = p.anim, L = JOB_LOOK[p.job], job = p.job;
+  const st = heroState(p), t = G.time, ph = p.anim, L = JOB_LOOK[p.job], job = jobLine(p.job), two = !!JOBS[p.job].base;   // job = 職業系（二轉視同一轉）
   if (st === 'climb') return drawHeroClimb(p);
   if (st === 'prone') return drawHeroProne(p);
   let bob = 0, la = 0, lb = 0, liftA = 0, liftB = 0;
@@ -1622,21 +2125,28 @@ function drawHero(p) {
   if (job === 'mage') shape(L.tunic, () => { ctx.moveTo(-8, -16); ctx.lineTo(-10.5, -6); ctx.lineTo(10.5, -6); ctx.lineTo(8, -16); ctx.closePath(); }, 1.5);
   shape(L.tunic, () => rr(-8, -28, 16, 16, 5));
   ctx.fillStyle = L.light; ctx.fillRect(-7, -15, 14, 2);
+  if (L.trim) { ctx.fillStyle = L.trim; ctx.fillRect(-1, -27, 2.5, 9); ctx.fillRect(-7, -24, 14, 1.6); }   // 二轉：胸前金色飾邊
   ctx.fillStyle = '#6b4423'; ctx.fillRect(-8, -18, 16, 3);
   ctx.fillStyle = '#f3c45a'; ctx.fillRect(2, -18.5, 3.5, 4);
-  if (job === 'warrior') { shape('#c9d4e0', () => rr(-10, -30, 11, 7, 3), 1.5, '#4c5a6e'); ctx.fillStyle = '#ffffff'; ctx.fillRect(-7, -29, 4, 1.5); }
-  else shape('#f0c24f', () => rr(-8, -30, 15, 4.5, 2), 1.5);
+  if (job === 'warrior') {
+    shape(two ? '#e6ecf4' : '#c9d4e0', () => rr(-10, -30, 11, 7, 3), 1.5, '#4c5a6e'); ctx.fillStyle = '#ffffff'; ctx.fillRect(-7, -29, 4, 1.5);
+    if (two) { ctx.fillStyle = L.trim; ctx.fillRect(-10, -24.5, 11, 1.6); }
+  } else shape(two ? L.trim : '#f0c24f', () => rr(-8, -30, 15, 4.5, 2), 1.5);
   shape('#ffdcb9', () => ell(1, -41, 12.5, 12));
   shape('#6b3b22', () => {
     ctx.moveTo(-12, -37); ctx.quadraticCurveTo(-15, -55, 2, -55); ctx.quadraticCurveTo(17, -54, 14, -43);
     ctx.lineTo(10, -46); ctx.lineTo(7, -42); ctx.lineTo(4, -47); ctx.lineTo(0, -43); ctx.lineTo(-3, -47); ctx.lineTo(-5, -37);
     ctx.quadraticCurveTo(-8, -30, -12, -37); ctx.closePath();
   });
-  if (job === 'mage') drawWizardHat(1, -50, 1, wave, L.band);
-  else {
+  if (job === 'mage') {
+    drawWizardHat(1, -50, two ? 1.12 : 1, wave, L.band);
+    if (two) { ctx.fillStyle = L.trim; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 1.8 : 4.2; ctx.lineTo(-4 + Math.cos(a) * r, -61 + Math.sin(a) * r); } ctx.closePath(); ctx.fill(); }   // 巫師：帽上的星星
+  } else {
     shape(L.band, () => rr(-12, -49, 26, 4, 2), 1.5);
     shape(L.band, () => { ctx.moveTo(-11, -48); ctx.lineTo(-23, -50 + wave); ctx.lineTo(-21, -44 + wave * 0.6); ctx.lineTo(-11, -45); ctx.closePath(); }, 1.5);
     if (job === 'archer') shape('#f1ead8', () => { ctx.moveTo(-9, -49); ctx.quadraticCurveTo(-14, -64, -6 + wave * 0.5, -66); ctx.quadraticCurveTo(-7, -57, -5, -49); ctx.closePath(); }, 1.5);
+    if (job === 'archer' && two) shape('#d9463b', () => { ctx.moveTo(-6, -49); ctx.quadraticCurveTo(-8, -66, 1 + wave * 0.4, -70); ctx.quadraticCurveTo(-2, -59, -2, -49); ctx.closePath(); }, 1.5);   // 獵人：第二根紅羽毛
+    if (job === 'warrior' && two) shape(L.trim, () => { ctx.moveTo(-2, -50); ctx.lineTo(1, -58); ctx.lineTo(4, -50); ctx.closePath(); }, 1.2);   // 騎士：頭帶上的金飾
   }
   const hurt = p.hurtT > 0;
   ctx.fillStyle = OUT;
@@ -1662,11 +2172,12 @@ function drawHero(p) {
     else if (st === 'walk') ang = -1.4 + Math.sin(ph * 13) * 0.15;
     drawStaff(ang, weaponCol(p, '#6ad1ff'), glow);
   } else {
-    const big = job === 'warrior' ? 1.18 : 1, col = weaponCol(p, job === 'novice' ? '#e9f0f7' : '#e9f0f7');
+    const big = job === 'warrior' ? (two ? 1.28 : 1.18) : 1, col = weaponCol(p, '#e9f0f7');
     let ang;
     if (st === 'attack') {
       if (kind === 'skill' || kind === 'cast') ang = e < 0.3 ? lerp(0.6, -0.9, e / 0.3) : lerp(-0.9, 0.05, Math.min(1, (e - 0.3) / 0.3));
       else if (kind === 'spin') ang = -0.2 + e * Math.PI * 4;
+      else if (kind === 'thrust') ang = e < 0.15 ? lerp(0.9, 0, e / 0.15) : 0;   // 衝鋒突刺：劍尖朝前
       else {
         const hv = kind === 'heavy';
         ang = e < 0.22 ? lerp(0.7, hv ? -2.7 : -2.3, e / 0.22) : lerp(hv ? -2.7 : -2.3, 1.3, 1 - Math.pow(1 - Math.min(1, (e - 0.22) / 0.4), 3));
@@ -1723,7 +2234,7 @@ function drawHeroProne(p) {
     ctx.moveTo(4, -6); ctx.quadraticCurveTo(0, -26, 14, -25); ctx.quadraticCurveTo(26, -25, 25, -15);
     ctx.lineTo(21, -17); ctx.lineTo(18, -13); ctx.lineTo(15, -18); ctx.lineTo(11, -14); ctx.lineTo(9, -18); ctx.lineTo(7, -8); ctx.closePath();
   });
-  if (p.job === 'mage') drawWizardHat(13, -22, 0.8, wave, L.band);
+  if (jobLine(p.job) === 'mage') drawWizardHat(13, -22, 0.8, wave, L.band);
   else {
     shape(L.band, () => rr(3, -21, 22, 4, 2), 1.5);
     shape(L.band, () => { ctx.moveTo(4, -20); ctx.lineTo(-6, -24 + wave); ctx.lineTo(-5, -18 + wave * 0.6); ctx.lineTo(4, -17); ctx.closePath(); }, 1.5);
@@ -1746,7 +2257,7 @@ function drawHeroClimb(p) {
   shape('#ffdcb9', () => ell(-8.5, -42 - c * 3, 3.4, 3.4), 1.5);
   shape('#ffdcb9', () => ell(8.5, -42 + c * 3, 3.4, 3.4), 1.5);
   shape('#6b3b22', () => ell(0, -41, 12.5, 12));
-  if (p.job === 'mage') drawWizardHat(0, -49, 1, 0, L.band);
+  if (jobLine(p.job) === 'mage') drawWizardHat(0, -49, 1, 0, L.band);
   else shape(L.band, () => rr(-12.5, -47, 25, 4, 2), 1.5);
   ctx.restore();
 }
@@ -1874,21 +2385,120 @@ function drawTreant(m, F) {
   ctx.fillStyle = 'rgba(30,18,8,.85)'; ctx.beginPath(); ctx.ellipse(9, -24, 5, m.chasing ? 3.5 : 2, 0, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
-const MONSTER_DRAW = { moss: drawMoss, shroom: drawShroom, golem: drawGolem, wolf: drawWolf, treant: drawTreant };
+function drawSentry(m, F) {   // 遺跡石偶：方頭石像、胸口符文、單眼發光
+  const walk = Math.abs(m.vx) > 1, s = walk ? Math.sin(m.anim * (m.chasing ? 9 : 5)) : 0, O = '#2e2f3a';
+  shape(F('#6d7180'), () => rr(-15, -12 - Math.max(0, s) * 3, 11, 12, 2), 2, O);
+  shape(F('#6d7180'), () => rr(4, -12 - Math.max(0, -s) * 3, 11, 12, 2), 2, O);
+  ctx.save(); ctx.translate(0, -Math.abs(s) * 1.5);
+  shape(F('#5d6170'), () => rr(-25, -43 + s * 2, 10, 25, 3), 2, O);
+  shape(F('#8a8f9e'), () => { ctx.moveTo(-17, -12); ctx.lineTo(-20, -45); ctx.lineTo(20, -45); ctx.lineTo(17, -12); ctx.closePath(); }, 2.5, O);
+  ctx.fillStyle = F('#747988'); ctx.fillRect(-16, -30, 32, 3); ctx.fillRect(-15, -18, 30, 2);
+  const gl = 0.6 + Math.sin(m.anim * 3) * 0.3;
+  ctx.fillStyle = m.chasing ? `rgba(255,120,90,${gl})` : `rgba(106,209,255,${gl})`;
+  ctx.beginPath(); ctx.moveTo(0, -41); ctx.lineTo(6, -34); ctx.lineTo(0, -23); ctx.lineTo(-6, -34); ctx.closePath(); ctx.fill();
+  shape(F('#9aa0ae'), () => rr(-12, -61, 25, 17, 3), 2.5, O);
+  ctx.fillStyle = F('#c9ccd6'); ctx.fillRect(-10, -59, 21, 2);
+  ctx.fillStyle = 'rgba(20,20,30,.85)'; ctx.fillRect(2, -55, 10, 5);
+  ctx.fillStyle = F(m.chasing ? '#ff6a4a' : '#6ad1ff'); ctx.fillRect(5, -54, 5, 3);
+  ctx.fillStyle = F('#6fa14a'); ctx.beginPath(); ctx.ellipse(-5, -61, 7, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+  shape(F('#7d8292'), () => rr(14, -43 - s * 2, 10, 26, 3), 2, O);
+  shape(F('#9aa0ae'), () => rr(13, -19 - s * 2, 12, 9, 3), 2, O);
+  ctx.restore();
+}
+function drawWraith(m, F) {   // 霧魂：飄浮的霧氣幽靈
+  const bob = Math.sin(m.anim * 3) * 4, fast = Math.abs(m.vx) > 1, w = Math.sin(m.anim * 6) * 4, O = '#5a4a9a';
+  ctx.save(); ctx.translate(0, -8 + bob);
+  ctx.globalAlpha *= 0.9;
+  ctx.fillStyle = 'rgba(201,184,255,.25)'; ctx.beginPath(); ctx.ellipse(0, -26, 28, 30, 0, 0, Math.PI * 2); ctx.fill();
+  shape(F('#c9b8ff'), () => { ctx.moveTo(-16, -30); ctx.quadraticCurveTo(-18, -6, -28 - (fast ? 8 : 0), 2 + w); ctx.quadraticCurveTo(-10, -4, -4, 4 - w); ctx.quadraticCurveTo(4, -6, 12, w); ctx.quadraticCurveTo(16, -14, 16, -30); ctx.closePath(); }, 2, O);
+  shape(F('#e3dcff'), () => ell(0, -34, 17, 17), 2, O);
+  ctx.fillStyle = F('#b3a4ef'); ctx.beginPath(); ctx.ellipse(-6, -38, 9, 12, -0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1f1838'; ctx.beginPath(); ctx.ellipse(5, -35, 3, 4.5, 0, 0, Math.PI * 2); ctx.ellipse(12, -35, 2.5, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = F(m.chasing ? '#ff6a8a' : '#9fe8ff'); ctx.fillRect(4, -36, 2, 2); ctx.fillRect(11, -36, 2, 2);
+  ctx.fillStyle = '#1f1838'; ctx.beginPath(); ctx.ellipse(9, -26, 3, m.chasing ? 3.5 : 1.8, 0, 0, Math.PI * 2); ctx.fill();
+  shape(F('#c9b8ff'), () => { ctx.moveTo(10, -24); ctx.quadraticCurveTo(24, -22 + w, 26, -14 + w); ctx.quadraticCurveTo(18, -16, 10, -18); ctx.closePath(); }, 1.5, O);
+  ctx.restore();
+}
+function drawKnightm(m, F) {   // 亡靈騎士：破舊鎧甲、骷髏頭盔、盾與長劍
+  const walk = Math.abs(m.vx) > 1, s = walk ? Math.sin(m.anim * (m.chasing ? 10 : 6)) : 0, O = '#1c1d26';
+  shape(F('#3a3e50'), () => rr(-13, -16 - Math.max(0, s) * 3, 9, 16, 2), 2, O);
+  shape(F('#3a3e50'), () => rr(4, -16 - Math.max(0, -s) * 3, 9, 16, 2), 2, O);
+  ctx.save(); ctx.translate(0, -Math.abs(s) * 1.5);
+  shape(F('#5a1f2a'), () => { ctx.moveTo(-10, -50); ctx.lineTo(-25, -14 + s * 2); ctx.lineTo(-19, -18); ctx.lineTo(-15, -11); ctx.lineTo(-9, -20); ctx.closePath(); }, 1.5, O);
+  shape(F('#4a4f63'), () => { ctx.moveTo(-21, -49); ctx.lineTo(-4, -49); ctx.lineTo(-4, -31); ctx.quadraticCurveTo(-12, -18, -21, -31); ctx.closePath(); }, 2, O);
+  ctx.fillStyle = F('#8a3b3b'); ctx.fillRect(-13.5, -47, 2.5, 22); ctx.fillRect(-19, -41, 13, 2.5);
+  shape(F('#5a6075'), () => rr(-9, -51, 22, 33, 4), 2.5, O);
+  ctx.fillStyle = F('#d8d2c4'); for (let i = 0; i < 3; i++) ctx.fillRect(-3, -45 + i * 7, 12, 2.5);
+  shape(F('#6d7489'), () => ell(9, -49, 8, 5), 2, O);
+  shape(F('#d8d2c4'), () => ell(3, -59, 9, 9), 2, O);
+  shape(F('#4a4f63'), () => { ctx.moveTo(-8, -59); ctx.quadraticCurveTo(-8, -73, 3, -73); ctx.quadraticCurveTo(14, -73, 14, -61); ctx.lineTo(14, -57); ctx.lineTo(-8, -55); ctx.closePath(); }, 2, O);
+  ctx.fillStyle = '#120a0a'; ctx.fillRect(1, -62, 12, 4);
+  ctx.fillStyle = F('#ff5a5a'); ctx.fillRect(5, -61, 3, 2); ctx.fillRect(10, -61, 2, 2);
+  shape(F('#8a3b3b'), () => { ctx.moveTo(0, -73); ctx.quadraticCurveTo(-12, -81, -18, -71 + s); ctx.quadraticCurveTo(-8, -73, -2, -69); ctx.closePath(); }, 1.5, O);
+  const sw = m.chasing ? Math.sin(m.anim * 8) * 0.4 : 0.2;
+  ctx.save(); ctx.translate(14, -38); ctx.rotate(-0.6 + sw);
+  shape(F('#b9c7d6'), () => { ctx.moveTo(4, -2.5); ctx.lineTo(34, -2.5); ctx.lineTo(39, 0); ctx.lineTo(34, 2.5); ctx.lineTo(4, 2.5); ctx.closePath(); }, 1.5, '#2e3440');
+  shape(F('#6b4423'), () => rr(-3, -2, 7, 4, 1.5), 1.5, O);
+  shape(F('#8a8f9e'), () => rr(3, -5, 3, 10, 1), 1.2, O);
+  ctx.restore();
+  ctx.restore();
+}
+function drawGuardian(m, F) {   // 霧之守衛：巨大的石之騎士，胸口有霧之核心；狂暴化後裂縫轉紅
+  const B = m.boss || { st: 'idle', phase: 1, t: 0, teleMax: 1 }, ph2 = B.phase === 2, O = '#1e2030';
+  const walk = Math.abs(m.vx) > 1, s = walk ? Math.sin(m.anim * (B.st === 'charge' ? 16 : 5)) : 0;
+  const tk = B.st === 'tele' ? clamp(1 - B.t / B.teleMax, 0, 1) : 0;
+  const slamUp = B.st === 'tele' && B.tele === 'slam' ? tk : 0;
+  const lean = B.st === 'charge' ? 0.2 : B.st === 'tele' && B.tele === 'charge' ? -0.12 * tk : 0;
+  const glow = B.st === 'tele' && B.tele === 'volley' ? 0.6 + tk : 0.45 + Math.sin(m.anim * 3) * 0.15;
+  const core = ph2 ? '#ff6a8a' : '#9fe8ff', coreRgb = ph2 ? '255,90,140' : '159,232,255';
+  ctx.fillStyle = `rgba(${ph2 ? '255,90,140' : '201,184,255'},.22)`; ctx.beginPath(); ctx.ellipse(0, -8, 74, 16, 0, 0, Math.PI * 2); ctx.fill();
+  shape(F('#454b5e'), () => rr(-34, -42 - Math.max(0, s) * 5, 24, 42, 6), 3, O);
+  shape(F('#454b5e'), () => rr(10, -42 - Math.max(0, -s) * 5, 24, 42, 6), 3, O);
+  ctx.save(); ctx.translate(0, -36 - Math.abs(s) * 2); ctx.rotate(lean);
+  const armA = -slamUp * 2.3;
+  ctx.save(); ctx.translate(-36, -74); ctx.rotate(armA * 0.85);
+  shape(F('#4a5064'), () => rr(-12, -6, 22, 56, 9), 3, O);
+  shape(F('#5a6378'), () => ell(-1, 54, 15, 13), 3, O);
+  ctx.restore();
+  shape(F('#5a6378'), () => { ctx.moveTo(-40, 0); ctx.lineTo(-50, -84); ctx.quadraticCurveTo(0, -102, 50, -84); ctx.lineTo(40, 0); ctx.quadraticCurveTo(0, 8, -40, 0); ctx.closePath(); }, 3.5, O);
+  ctx.fillStyle = F('#4a5266'); ctx.fillRect(-36, -38, 72, 5); ctx.fillRect(-30, -18, 60, 4);
+  ctx.strokeStyle = ph2 ? 'rgba(255,90,120,.95)' : 'rgba(159,232,255,.55)'; ctx.lineWidth = ph2 ? 3 : 2;
+  ctx.beginPath(); ctx.moveTo(-30, -74); ctx.lineTo(-22, -58); ctx.lineTo(-28, -46); ctx.moveTo(28, -68); ctx.lineTo(20, -54); ctx.lineTo(30, -42); ctx.moveTo(-10, -8); ctx.lineTo(-2, -24); ctx.stroke();
+  ctx.fillStyle = `rgba(${coreRgb},${Math.min(0.8, 0.3 * glow + 0.1)})`; ctx.beginPath(); ctx.arc(4, -58, 18 + glow * 14, 0, Math.PI * 2); ctx.fill();
+  shape(F(core), () => ell(4, -58, 11, 11), 2.5, O);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, -63, 4, 4);
+  shape(F('#6d7489'), () => ell(-40, -82, 20, 13), 3, O);
+  shape(F('#6d7489'), () => ell(44, -82, 20, 13), 3, O);
+  shape(F('#d8d2c4'), () => { ctx.moveTo(-12, -116); ctx.quadraticCurveTo(-30, -124, -32, -140); ctx.quadraticCurveTo(-20, -128, -4, -120); ctx.closePath(); }, 2.5, O);
+  shape(F('#d8d2c4'), () => { ctx.moveTo(14, -118); ctx.quadraticCurveTo(32, -128, 32, -144); ctx.quadraticCurveTo(24, -128, 20, -120); ctx.closePath(); }, 2.5, O);
+  shape(F('#4a5064'), () => rr(-18, -122, 40, 34, 10), 3, O);
+  ctx.fillStyle = '#0d0e16'; ctx.fillRect(-6, -110, 26, 8);
+  ctx.fillStyle = F(ph2 ? '#ff4a6a' : '#9fe8ff'); ctx.fillRect(4, -108, 6, 4); ctx.fillRect(13, -108, 5, 4);
+  ctx.save(); ctx.translate(40, -74); ctx.rotate(armA + (B.st === 'charge' ? -0.7 : 0.08));
+  shape(F('#5a6378'), () => rr(-11, -6, 22, 56, 9), 3, O);
+  shape(F('#6d7489'), () => ell(0, 56, 16, 14), 3, O);
+  ctx.restore();
+  ctx.restore();
+}
+const MONSTER_DRAW = { moss: drawMoss, shroom: drawShroom, golem: drawGolem, wolf: drawWolf, treant: drawTreant, sentry: drawSentry, wraith: drawWraith, knightm: drawKnightm, guardian: drawGuardian };
 function drawMonster(m) {
   if (m.dead && m.dying <= 0) return;
   const d = m.d;
   ctx.save(); ctx.translate(m.x, m.y);
   let a = 1;
-  if (m.dead) { const k = 1 - m.dying / 0.6; a = 1 - k; ctx.translate(0, -k * 18); ctx.scale(1 + k * 0.3, 1 - k * 0.5); }
+  if (m.dead) { const k = 1 - m.dying / (m.dyMax || 0.6); a = 1 - k; ctx.translate(0, -k * 18); ctx.scale(1 + k * 0.3, 1 - k * 0.5); }
   if (m.spawnFx > 0) a = Math.min(a, 1 - m.spawnFx / 0.6);
   ctx.globalAlpha = Math.max(0, a);
-  if (m.onGround) { ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(0, 0, d.w * 0.48, 3.5, 0, 0, Math.PI * 2); ctx.fill(); }
+  if (m.onGround) { ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(0, 0, d.w * 0.48, d.boss ? 7 : 3.5, 0, 0, Math.PI * 2); ctx.fill(); }
   ctx.scale(m.face, 1);
   const F = m.flash > 0 ? () => '#ffffff' : c => c;
   MONSTER_DRAW[m.type](m, F);
+  if (m.chill > 0 && !m.dead) {   // 緩速中：冰霜覆蓋
+    ctx.fillStyle = 'rgba(170,225,255,.35)'; ctx.beginPath(); ctx.ellipse(0, -d.h / 2, d.w * 0.62, d.h * 0.56, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillRect(-d.w * 0.3, -d.h * 0.8, 3, 3); ctx.fillRect(d.w * 0.2, -d.h * 0.4, 3, 3);
+  }
   ctx.restore();
-  if (!m.dead && m.barT > 0 && m.hp < d.hp) {
+  if (!d.boss && !m.dead && m.barT > 0 && m.hp < d.hp) {
     const bw = 44, bx = m.x - bw / 2, by = m.y - d.h - 14;
     ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(bx - 1, by - 1, bw + 2, 7);
     ctx.fillStyle = '#5a1b1b'; ctx.fillRect(bx, by, bw, 5);
@@ -1915,10 +2525,11 @@ function drawDrops() {
     } else if (d.kind === 'equip' || d.kind === 'etc') {
       const ic = itemIcon(d.kind === 'equip' ? d.value.b : 'etc:' + d.value), r = d.kind === 'equip' ? d.value.r : 0;
       if (r > 0) {
-        const c = r === 2 ? '197,139,255' : '106,184,255', pul = 0.75 + Math.sin(G.time * 5 + d.x) * 0.25;
-        const g = ctx.createLinearGradient(0, -70, 0, 0); g.addColorStop(0, `rgba(${c},0)`); g.addColorStop(1, `rgba(${c},${0.45 * pul})`);
-        ctx.fillStyle = g; ctx.fillRect(-5, -70, 10, 70);
-        ctx.fillStyle = `rgba(${c},${0.35 * pul})`; ctx.beginPath(); ctx.ellipse(0, -11, 17, 15, 0, 0, Math.PI * 2); ctx.fill();
+        const c = RARITY_RGB[r], pul = 0.75 + Math.sin(G.time * 5 + d.x) * 0.25, gold = r >= 3, bh = gold ? 110 : 70, bw = gold ? 16 : 10;
+        const g = ctx.createLinearGradient(0, -bh, 0, 0); g.addColorStop(0, `rgba(${c},0)`); g.addColorStop(1, `rgba(${c},${(gold ? 0.6 : 0.45) * pul})`);
+        ctx.fillStyle = g; ctx.fillRect(-bw / 2, -bh, bw, bh);
+        ctx.fillStyle = `rgba(${c},${0.35 * pul})`; ctx.beginPath(); ctx.ellipse(0, -11, gold ? 22 : 17, gold ? 19 : 15, 0, 0, Math.PI * 2); ctx.fill();
+        if (gold) { ctx.fillStyle = '#fff6c2'; const a = G.time * 3 + d.x; ctx.fillRect(Math.cos(a) * 16 - 1.5, -12 + Math.sin(a) * 14 - 1.5, 3, 3); ctx.fillRect(Math.cos(a + 3) * 14 - 1, -12 + Math.sin(a + 3) * 12 - 1, 2, 2); }
       }
       ctx.imageSmoothingEnabled = true; ctx.drawImage(ic.cv, -12, -24, 24, 24); ctx.imageSmoothingEnabled = false;
     } else {
@@ -1939,8 +2550,14 @@ function drawProjs() {
       ctx.strokeStyle = 'rgba(95,214,191,.35)'; ctx.lineWidth = 14; ctx.beginPath(); ctx.arc(-14, 0, 22, -1.15, 1.15); ctx.stroke();
       ctx.strokeStyle = 'rgba(191,247,236,.9)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(-12, 0, 22, -1.1, 1.1); ctx.stroke();
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(-10, 0, 22, -1.0, 1.0); ctx.stroke();
-    } else if (pr.kind === 'arrow' || pr.kind === 'bigarrow') {
-      const big = pr.kind === 'bigarrow', k = big ? 1.4 : 1;
+    } else if (pr.kind === 'arrow' || pr.kind === 'bigarrow' || pr.kind === 'bomb') {
+      const big = pr.kind === 'bigarrow', k = big ? 1.4 : pr.kind === 'bomb' ? 1.2 : 1;
+      if (pr.kind === 'bomb') {   // 爆裂箭：箭頭綁著發光的火藥
+        const pul = 1 + Math.sin(pr.t * 40) * 0.2;
+        ctx.fillStyle = 'rgba(255,120,60,.45)'; ctx.beginPath(); ctx.arc(8, 0, 12 * pul, 0, Math.PI * 2); ctx.fill();
+        shape('#7a2a0a', () => ell(6, 0, 6, 5), 1.5, '#2b1d17');
+        ctx.fillStyle = '#ffd23e'; ctx.fillRect(4, -5, 3, 2);
+      }
       if (big) { ctx.strokeStyle = 'rgba(160,255,140,.4)'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(-46, 0); ctx.lineTo(14, 0); ctx.stroke(); }
       ctx.strokeStyle = OUT; ctx.lineWidth = 4 * k; ctx.beginPath(); ctx.moveTo(-22 * k, 0); ctx.lineTo(10 * k, 0); ctx.stroke();
       ctx.strokeStyle = big ? '#e9ffd8' : '#b48a52'; ctx.lineWidth = 2 * k; ctx.beginPath(); ctx.moveTo(-22 * k, 0); ctx.lineTo(10 * k, 0); ctx.stroke();
@@ -1992,6 +2609,56 @@ function drawFxs() {
       ctx.globalAlpha = a; ctx.strokeStyle = f.col; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.ellipse(f.x, f.y - k * 50, 26 + k * 10, 8 + k * 3, 0, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath(); ctx.ellipse(f.x, f.y - 10 - k * 30, 20 + k * 8, 6, 0, 0, Math.PI * 2); ctx.stroke();
+    } else if (f.type === 'dash') {   // 衝鋒突刺：藍白色殘影與速度線
+      ctx.translate(f.x, f.y); ctx.scale(f.dir, 1);
+      const L = f.len * Math.min(1, k * 3);
+      const g = ctx.createLinearGradient(0, 0, Math.max(1, L), 0); g.addColorStop(0, 'rgba(106,184,255,0)'); g.addColorStop(1, `rgba(191,227,255,${0.7 * a})`);
+      ctx.fillStyle = g; ctx.fillRect(0, -20, L, 40);
+      ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(L * 0.2, 0); ctx.lineTo(L + 24, 0); ctx.stroke();
+      ctx.lineWidth = 2; for (let i = 0; i < 3; i++) { const yy = -15 + i * 15; ctx.beginPath(); ctx.moveTo(L * (0.3 + i * 0.15), yy); ctx.lineTo(L, yy); ctx.stroke(); }
+    } else if (f.type === 'skysword') {   // 天劍降臨：金色巨劍落下＋地面衝擊環
+      const fall = Math.min(1, f.t / 0.26), y = f.y - 340 * (1 - fall) - 20;
+      ctx.globalAlpha = f.t > 0.5 ? Math.max(0, 1 - (f.t - 0.5) / 0.25) : 1;
+      const g = ctx.createLinearGradient(0, f.y - 320, 0, f.y); g.addColorStop(0, 'rgba(255,240,160,0)'); g.addColorStop(1, 'rgba(255,240,160,.38)');
+      ctx.fillStyle = g; ctx.fillRect(f.x - 42, f.y - 320, 84, 320);
+      ctx.translate(f.x, y);
+      shape('#fffbe0', () => { ctx.moveTo(-10, -150); ctx.lineTo(10, -150); ctx.lineTo(10, -22); ctx.lineTo(0, 0); ctx.lineTo(-10, -22); ctx.closePath(); }, 2.5, '#c9a43a');
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(-2, -146, 4, 120);
+      shape('#f3c45a', () => rr(-30, -162, 60, 11, 4), 2.5, '#7a5a14');
+      shape('#8a5a2a', () => rr(-5, -194, 10, 32, 3), 2, '#3a2516');
+      shape('#ffe066', () => ell(0, -198, 8, 8), 2, '#7a5a14');
+      if (fall >= 1) {
+        const e = (f.t - 0.26) / 0.49;
+        ctx.strokeStyle = `rgba(255,240,160,${Math.max(0, 1 - e)})`; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.ellipse(0, 20, 40 + e * 140, 10 + e * 26, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+    } else if (f.type === 'rain') {   // 箭雨
+      ctx.globalAlpha = a;
+      ctx.fillStyle = 'rgba(191,227,255,.22)'; ctx.beginPath(); ctx.ellipse(f.x, f.y, f.w / 2, 10, 0, 0, Math.PI * 2); ctx.fill();
+      for (let i = 0; i < 18; i++) {
+        const ph = (f.t * 2.8 + hash(f.seed + i)) % 1, ax = f.x - f.w / 2 + hash(f.seed + i * 7) * f.w + ph * 30, ay = f.y - 280 + ph * 280;
+        ctx.strokeStyle = '#7a5334'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(ax - 9, ay - 28); ctx.lineTo(ax, ay); ctx.stroke();
+        ctx.fillStyle = '#e9f0f7'; ctx.beginPath(); ctx.moveTo(ax + 2, ay + 5); ctx.lineTo(ax - 4, ay - 2); ctx.lineTo(ax + 3, ay - 3); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ff8a7e'; ctx.fillRect(ax - 11, ay - 31, 3, 5);
+      }
+    } else if (f.type === 'blizz') {   // 暴風雪：冰藍色區域與落下的冰晶
+      ctx.globalAlpha = a;
+      const g = ctx.createLinearGradient(0, f.y - 280, 0, f.y); g.addColorStop(0, 'rgba(190,235,255,0)'); g.addColorStop(1, 'rgba(190,235,255,.3)');
+      ctx.fillStyle = g; ctx.fillRect(f.x - f.w / 2, f.y - 280, f.w, 280);
+      ctx.fillStyle = 'rgba(220,245,255,.45)'; ctx.beginPath(); ctx.ellipse(f.x, f.y, f.w / 2, 12, 0, 0, Math.PI * 2); ctx.fill();
+      for (let i = 0; i < 24; i++) {
+        const ph = (f.t * 2.2 + hash(f.seed + i)) % 1, ix = f.x - f.w / 2 + hash(f.seed + i * 5) * f.w - ph * 40, iy = f.y - 280 + ph * 280, s = 3 + hash(i) * 4;
+        ctx.fillStyle = i % 3 ? '#ffffff' : '#9fe8ff';
+        ctx.beginPath(); ctx.moveTo(ix, iy - s * 1.6); ctx.lineTo(ix + s, iy); ctx.lineTo(ix, iy + s * 1.6); ctx.lineTo(ix - s, iy); ctx.closePath(); ctx.fill();
+      }
+    } else if (f.type === 'meteor') {   // 隕石術：帶火尾的隕石斜斜落下
+      const e = Math.min(1, k / 0.95), mx = f.x - f.dir * 260 * (1 - e), my = f.y - 30 - 420 * (1 - e);
+      ctx.fillStyle = `rgba(255,80,50,${0.15 + 0.2 * Math.sin(G.time * 24) ** 2})`; ctx.beginPath(); ctx.ellipse(f.x, f.y, 150, 16, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,140,60,.5)'; ctx.lineWidth = 28; ctx.beginPath(); ctx.moveTo(mx - f.dir * 90, my - 145); ctx.lineTo(mx, my); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,230,140,.85)'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(mx - f.dir * 70, my - 112); ctx.lineTo(mx, my); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,160,60,.45)'; ctx.beginPath(); ctx.arc(mx, my, 30, 0, Math.PI * 2); ctx.fill();
+      shape('#7a3a1a', () => ell(mx, my, 20, 18), 2.5, '#2b1d17');
+      ctx.fillStyle = '#ffb23e'; ctx.fillRect(mx - 6, my - 6, 6, 4); ctx.fillRect(mx + 4, my + 2, 5, 3);
     }
     ctx.restore();
   }
@@ -2033,15 +2700,76 @@ function drawLevelFx() {
   ctx.restore();
 }
 
+// Boss 招式預兆（畫在地面上，怪物之前）
+function drawBossTele(m) {
+  const B = m.boss;
+  if (!B || m.dead || B.st !== 'tele') return;
+  const k = clamp(1 - B.t / B.teleMax, 0, 1), ph = Math.sin(G.time * 20) * 0.5 + 0.5;
+  ctx.save();
+  if (B.tele === 'charge') {
+    const x2 = m.face > 0 ? m.maxX + 50 : m.minX - 50, x1 = m.x;
+    ctx.fillStyle = `rgba(255,60,60,${0.1 + 0.16 * ph})`; ctx.fillRect(Math.min(x1, x2), GROUND_Y - 120, Math.abs(x2 - x1), 120);
+    ctx.textAlign = 'center';
+    for (let i = 1; i <= 4; i++) outlinedText(m.face > 0 ? '▶' : '◀', x1 + m.face * (60 + i * 70 + k * 30), GROUND_Y - 50, 24, `rgba(255,120,110,${0.4 + 0.5 * ph})`, 'rgba(60,0,0,.5)', 900, 3);
+  } else if (B.tele === 'slam') {
+    ctx.fillStyle = `rgba(255,60,60,${0.1 + 0.18 * ph})`; ctx.fillRect(m.x - BOSS.waveLen, GROUND_Y - 34, BOSS.waveLen * 2, 34);
+    ctx.strokeStyle = `rgba(255,140,140,${1 - k})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(m.x, GROUND_Y, 40 + k * 120, 8 + k * 16, 0, 0, Math.PI * 2); ctx.stroke();
+  } else if (B.tele === 'volley') {
+    const p = G.player;
+    ctx.strokeStyle = `rgba(201,184,255,${0.25 + 0.35 * ph})`; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
+    ctx.beginPath(); ctx.moveTo(m.x + m.face * 30, m.y - 96); ctx.lineTo(p.x, p.y - 28); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.textAlign = 'center';
+  outlinedText('!', m.x, m.y - m.d.h - 28 - k * 8, 42, '#ff5a3c', '#3a0a02', 900, 6);
+  ctx.restore();
+}
+// Boss 的震波與霧彈
+function drawHazards() {
+  for (const h of G.hazards) {
+    ctx.save();
+    if (h.type === 'wave') {
+      const a = Math.max(0, 1 - h.dist / h.max * 0.7);
+      ctx.translate(h.x, GROUND_Y); ctx.scale(h.dir, 1);
+      ctx.fillStyle = `rgba(201,184,255,${0.6 * a})`; ctx.beginPath(); ctx.moveTo(-30, 0); ctx.quadraticCurveTo(-8, -46, 10, -34); ctx.quadraticCurveTo(20, -16, 24, 0); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = `rgba(255,255,255,${0.9 * a})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-20, -4); ctx.quadraticCurveTo(-2, -40, 12, -28); ctx.stroke();
+    } else {
+      const pul = 1 + Math.sin(h.t * 18) * 0.15;
+      ctx.fillStyle = 'rgba(138,122,216,.35)'; ctx.beginPath(); ctx.arc(h.x, h.y, h.r * 1.8 * pul, 0, Math.PI * 2); ctx.fill();
+      shape('#c9b8ff', () => ell(h.x, h.y, h.r, h.r), 2, '#3a2a6a');
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(h.x - 3, h.y - 3, 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+// 畫面上方的 Boss 血條（靠近祭壇時顯示）
+function drawBossBar() {
+  const p = G.player, m = G.monsters.find(m => m.d.boss);
+  if (!p || !m || m.dead || p.x < ARENA_X - 420) return;
+  const d = m.d, cw = cv.clientWidth || VIEW_W, k = VIEW_W / cw, tb = $('topbtns');
+  const x0 = Math.round(((tb && tb.offsetWidth) || 120) * k) + 16, x1 = VIEW_W - miniW() - 24, bw = Math.max(120, x1 - x0), y = 8, bh = 18;
+  const f = Math.max(0, m.hp / d.hp), ph2 = m.boss && m.boss.phase === 2;
+  ctx.save();
+  ctx.fillStyle = 'rgba(14,10,20,.8)'; ctx.beginPath(); rr(x0 - 4, y - 3, bw + 8, bh + 6, 6); ctx.fill();
+  ctx.fillStyle = '#3a1020'; ctx.fillRect(x0, y, bw, bh);
+  const g = ctx.createLinearGradient(0, y, 0, y + bh); g.addColorStop(0, ph2 ? '#ff7a9a' : '#ff8a6e'); g.addColorStop(1, ph2 ? '#b0204a' : '#c8302f');
+  ctx.fillStyle = g; ctx.fillRect(x0, y, bw * f, bh);
+  ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillRect(x0, y, bw * f, 3);
+  ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(x0 + bw / 2 - 1, y - 2, 2, bh + 4);   // 50%：狂暴化
+  ctx.strokeStyle = ph2 ? '#ff9ab0' : '#c9b8ff'; ctx.lineWidth = 1.5; ctx.strokeRect(x0, y, bw, bh);
+  ctx.textAlign = 'left'; outlinedText(`Lv.${d.lv} ${d.name}${ph2 ? '（狂暴）' : ''}`, x0 + 6, y + 13.5, 12, '#ffffff', 'rgba(0,0,0,.85)', 800, 3);
+  ctx.textAlign = 'right'; outlinedText(`${(f * 100).toFixed(1)}%`, x0 + bw - 6, y + 13.5, 12, '#ffe9a8', 'rgba(0,0,0,.85)', 800, 3);
+  ctx.restore();
+}
 // ================= HUD（畫布內）：小地圖 / 提示 / 橫幅 =================
+const miniW = () => VIEW_W < 700 ? 150 : 210;
 function drawMinimap() {
-  const mw = VIEW_W < 700 ? 150 : 210, mh = Math.round(mw * 0.24), mx = VIEW_W - mw - 8, my = 24;
+  const mw = miniW(), mh = Math.round(mw * 0.24), mx = VIEW_W - mw - 8, my = 24;
   const Y0 = 260, Y1 = WORLD_H - 30, sx = mw / WORLD_W, sy = mh / (Y1 - Y0);
   const X = x => mx + x * sx, Y = y => my + (y - Y0) * sy;
   ctx.save();
   ctx.fillStyle = 'rgba(14,23,20,.72)'; ctx.beginPath(); rr(mx - 4, my - 18, mw + 8, mh + 22, 6); ctx.fill();
   ctx.strokeStyle = 'rgba(160,200,170,.7)'; ctx.lineWidth = 1; ctx.stroke();
-  ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'left'; ctx.fillStyle = '#f3c45a'; ctx.fillText('晨霧森林', mx, my - 5);
+  ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'left'; ctx.fillStyle = '#f3c45a'; ctx.fillText(G.player ? areaOf(G.player.x) : '晨霧森林', mx, my - 5);
   ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(mx, my, mw, mh);
   ctx.fillStyle = '#8fd16a';
   for (const p of PLATFORMS) ctx.fillRect(X(p.x), Y(p.y) - 1, Math.max(2, p.w * sx), p.ground ? 2.5 : 2);
@@ -2050,7 +2778,12 @@ function drawMinimap() {
   ctx.fillStyle = '#e8d6b0'; ctx.fillRect(X(30), Y(GROUND_Y) - 5, 130 * sx, 4);
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.strokeRect(X(G.cam.x), Y(Math.max(Y0, G.cam.y)), VIEW_W * sx, Math.min(mh, (G.cam.y + VIEW_H - Math.max(Y0, G.cam.y)) * sy));
   ctx.fillStyle = '#7dff9a'; for (const n of NPCS) ctx.fillRect(X(n.x) - 1.5, Y(GROUND_Y) - 4, 3, 3);
-  for (const m of G.monsters) { if (m.dead) continue; ctx.fillStyle = m.d.lv >= 12 ? '#d58bff' : m.d.heavy ? '#ff6a4a' : '#ff9a8e'; ctx.fillRect(X(m.x) - 1.5, Y(m.y) - 3, 3, 3); }
+  ctx.fillStyle = 'rgba(255,90,90,.18)'; ctx.fillRect(X(ARENA_X), my, mw - (X(ARENA_X) - mx), mh);   // 祭壇範圍
+  for (const m of G.monsters) {
+    if (m.dead) continue;
+    if (m.d.boss) { ctx.fillStyle = '#ff3b3b'; ctx.fillRect(X(m.x) - 3, Y(m.y) - 6, 6, 6); ctx.strokeStyle = '#ffffff'; ctx.strokeRect(X(m.x) - 3, Y(m.y) - 6, 6, 6); continue; }
+    ctx.fillStyle = m.d.lv >= 18 ? '#8fd0ff' : m.d.lv >= 12 ? '#d58bff' : m.d.heavy ? '#ff6a4a' : '#ff9a8e'; ctx.fillRect(X(m.x) - 1.5, Y(m.y) - 3, 3, 3);
+  }
   const p = G.player;
   ctx.fillStyle = '#ffe066'; ctx.beginPath(); ctx.arc(X(p.x), Y(p.y) - 3, 3, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = '#2b1d07'; ctx.lineWidth = 1; ctx.stroke();
@@ -2080,6 +2813,16 @@ function drawBanners() {
     ctx.fillStyle = g; ctx.fillRect(VIEW_W / 2 - 200, y - 36, 400, 60);
     outlinedText('晨霧森林', VIEW_W / 2, y, 30, '#fff0c2', '#2b1d07', 900, 5);
     outlinedText('— 晨霧村外圍 —', VIEW_W / 2, y + 18, 12, '#cfe3d4', '#0e1714', 700, 3);
+  } else if (G.areaT > 0) {   // 進入新區域時的區域名稱
+    const a = G.areaT > 2.5 ? (3 - G.areaT) / 0.5 : Math.min(1, G.areaT / 0.8);
+    ctx.globalAlpha = Math.max(0, a);
+    const y = VIEW_H * 0.22;
+    const g = ctx.createLinearGradient(VIEW_W / 2 - 180, 0, VIEW_W / 2 + 180, 0);
+    g.addColorStop(0, 'rgba(14,23,20,0)'); g.addColorStop(0.5, 'rgba(14,23,20,.6)'); g.addColorStop(1, 'rgba(14,23,20,0)');
+    ctx.fillStyle = g; ctx.fillRect(VIEW_W / 2 - 180, y - 32, 360, 54);
+    outlinedText(G.area, VIEW_W / 2, y, 26, '#e3dcff', '#1f1838', 900, 5);
+    outlinedText({ 霧林深處: '建議 Lv.12 以上', 霧谷遺跡: '建議 Lv.18 以上', 守衛祭壇: 'Boss「霧之守衛」・建議 Lv.28 以上' }[G.area] || '', VIEW_W / 2, y + 17, 12, '#cfe3d4', '#0e1714', 700, 3);
+    ctx.globalAlpha = 1;
   }
   if (G.banner) {
     const b = G.banner, a = b.t < 0.2 ? b.t / 0.2 : b.t > b.life - 0.5 ? (b.life - b.t) / 0.5 : 1;
@@ -2122,6 +2865,13 @@ function paintIcon(key) {
       shape('#9aa0aa', () => { ctx.moveTo(6, 22); ctx.lineTo(10, 8); ctx.lineTo(20, 4); ctx.lineTo(27, 14); ctx.lineTo(22, 27); ctx.lineTo(11, 28); ctx.closePath(); }, 2, '#363a42');
       ctx.fillStyle = '#737985'; ctx.beginPath(); ctx.moveTo(11, 12); ctx.lineTo(18, 9); ctx.lineTo(16, 20); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#6fa14a'; ctx.beginPath(); ctx.ellipse(18, 6, 5, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (id === 'rune') {
+      shape('#8a8f9e', () => { ctx.moveTo(8, 27); ctx.lineTo(6, 9); ctx.lineTo(16, 4); ctx.lineTo(26, 9); ctx.lineTo(24, 27); ctx.closePath(); }, 2, '#2e2f3a');
+      ctx.strokeStyle = '#6ad1ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(16, 9); ctx.lineTo(21, 16); ctx.lineTo(16, 24); ctx.lineTo(11, 16); ctx.closePath(); ctx.moveTo(16, 12); ctx.lineTo(16, 21); ctx.stroke();
+    } else if (id === 'ecto') {
+      ctx.fillStyle = 'rgba(201,184,255,.4)'; ctx.beginPath(); ctx.arc(16, 16, 13, 0, Math.PI * 2); ctx.fill();
+      shape('#c9b8ff', () => { ctx.moveTo(16, 4); ctx.lineTo(24, 16); ctx.lineTo(16, 28); ctx.lineTo(8, 16); ctx.closePath(); }, 2, '#3a2a6a');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(13, 10, 3, 6);
     } else {
       shape('#ece8f6', () => { ctx.moveTo(9, 5); ctx.quadraticCurveTo(27, 10, 22, 28); ctx.quadraticCurveTo(19, 15, 6, 10); ctx.closePath(); }, 2, '#2a2638');
       ctx.fillStyle = '#b9b2d6'; ctx.fillRect(8, 7, 5, 3);
@@ -2257,12 +3007,30 @@ const NPC_DRAW = {
     ctx.fillStyle = OUT; ctx.fillRect(7, -34, 4, 1.3);
     ctx.restore();
   },
+  hilda() {   // 遺跡學者：圓眼鏡、綠長袍、抱著古書、紅棕色包頭
+    const bob = Math.sin(G.time * 2 + 3) * 0.6;
+    drawLeg(-3, 0, 0, '#3a4a40'); drawLeg(3, 0, 0, '#3a4a40');
+    ctx.save(); ctx.translate(0, -bob);
+    shape('#2f6a5a', () => { ctx.moveTo(-9, -29); ctx.lineTo(-12, -4); ctx.lineTo(12, -4); ctx.lineTo(9, -29); ctx.closePath(); });
+    ctx.fillStyle = '#c9a46a'; ctx.fillRect(-11, -8, 22, 2.5); ctx.fillStyle = '#245244'; ctx.fillRect(-1, -28, 2, 20);
+    ctx.save(); ctx.translate(0, -18); ctx.rotate(-0.7); ctx.fillStyle = '#7a5334'; ctx.fillRect(-12, -1.5, 24, 3); ctx.restore();
+    shape('#8a3b2a', () => rr(4, -25, 12, 15, 2), 1.5);
+    ctx.fillStyle = '#f1ead8'; ctx.fillRect(6, -23, 2, 11); ctx.fillStyle = '#f3c45a'; ctx.fillRect(10, -20, 4, 4);
+    shape('#ffdcb9', () => ell(6, -16, 3.4, 3.4), 1.5);
+    shape('#ffdcb9', () => ell(1, -40, 12, 11.5));
+    shape('#8a4a2a', () => ell(-8, -51, 6, 6));
+    shape('#8a4a2a', () => { ctx.moveTo(-11, -34); ctx.quadraticCurveTo(-14, -53, 2, -52); ctx.quadraticCurveTo(14, -52, 13, -42); ctx.quadraticCurveTo(4, -48, -4, -43); ctx.lineTo(-6, -30); ctx.closePath(); });
+    ctx.fillStyle = OUT; ctx.fillRect(3.6, -41.5, 1.8, 2.6); ctx.fillRect(9.4, -41.5, 1.8, 2.6);
+    ctx.strokeStyle = OUT; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.arc(4.5, -40, 3.4, 0, Math.PI * 2); ctx.moveTo(13.5, -40); ctx.arc(10.1, -40, 3.4, 0, Math.PI * 2); ctx.moveTo(7.9, -40.5); ctx.lineTo(6.7, -40.5); ctx.stroke();
+    ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(8.5, -34, 1.8, 0.2, Math.PI - 0.2); ctx.stroke();
+    ctx.restore();
+  },
 };
 function drawNpcs() {
   const p = G.player, near = nearNpc();
   for (const n of NPCS) {
     if (n.x < G.cam.x - 80 || n.x > G.cam.x + VIEW_W + 80) continue;
-    const face = p && Math.abs(p.x - n.x) < 260 ? (p.x < n.x ? -1 : 1) : (n.id === 'leo' ? -1 : 1);
+    const face = p && Math.abs(p.x - n.x) < 260 ? (p.x < n.x ? -1 : 1) : (n.id === 'leo' || n.id === 'hilda' ? -1 : 1);
     ctx.save(); ctx.translate(n.x, GROUND_Y);
     ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(0, 0, 14, 3.5, 0, 0, Math.PI * 2); ctx.fill();
     ctx.scale(face, 1);
@@ -2323,8 +3091,8 @@ function drawTracker() {
       ctx.font = `600 10.5px ${FONT}`; ctx.fillStyle = '#bfd3c4'; ctx.fillText(`${qGoal(Q)} ${qProgText(Q)}`, x + 8, yy + 26);
     });
   }
-  if (G.ui.win || G.ui.dlg) {
-    ctx.textAlign = 'center'; outlinedText('‖ 暫停中', VIEW_W / 2, hudTop() + 6, 13, '#ffffff', 'rgba(0,0,0,.75)', 800, 3);
+  if (paused()) {
+    ctx.textAlign = 'center'; outlinedText('‖ 暫停中', VIEW_W / 2, hudTop() + 12, 13, '#ffffff', 'rgba(0,0,0,.75)', 800, 3);
   }
   ctx.restore();
 }
@@ -2342,14 +3110,22 @@ function render() {
   const tw = Math.min(WORLD_W - tx, VIEW_W + 6), th = Math.min(WORLD_H - ty, VIEW_H + 6);
   if (terrain) ctx.drawImage(terrain, tx, ty, tw, th, tx, ty, tw, th);
   // 霧林深處：淡紫色霧氣與入口告示牌
-  if (cx + VIEW_W > DEEP_X - 260) {
+  if (cx + VIEW_W > DEEP_X - 260 && cx < RUIN_X + 300) {
     const g = ctx.createLinearGradient(DEEP_X - 260, 0, DEEP_X + 160, 0);
     g.addColorStop(0, 'rgba(96,84,150,0)'); g.addColorStop(1, 'rgba(96,84,150,.2)');
-    ctx.fillStyle = g; ctx.fillRect(DEEP_X - 260, cy - 10, WORLD_W - DEEP_X + 260, VIEW_H + 20);
-    ctx.fillStyle = '#4a3a3a'; ctx.fillRect(DEEP_X + 30, GROUND_Y - 58, 6, 58);
-    shape('#9a8fb8', () => rr(DEEP_X - 14, GROUND_Y - 76, 94, 30, 4), 2, '#2a2638');
-    ctx.textAlign = 'center'; ctx.font = `800 12px ${FONT}`; ctx.fillStyle = '#1f1a2e';
-    ctx.fillText('霧林深處 ▶', DEEP_X + 33, GROUND_Y - 63); ctx.fillText('建議 Lv.12 以上', DEEP_X + 33, GROUND_Y - 50);
+    ctx.fillStyle = g; ctx.fillRect(DEEP_X - 260, cy - 10, RUIN_X - DEEP_X + 60, VIEW_H + 20);
+    const g2 = ctx.createLinearGradient(RUIN_X - 200, 0, RUIN_X + 300, 0);
+    g2.addColorStop(0, 'rgba(96,84,150,.2)'); g2.addColorStop(1, 'rgba(96,84,150,0)');
+    ctx.fillStyle = g2; ctx.fillRect(RUIN_X - 200, cy - 10, 500, VIEW_H + 20);
+    sign(DEEP_X + 33, '霧林深處 ▶', '建議 Lv.12 以上', '#9a8fb8', '#2a2638', '#1f1a2e');
+  }
+  // 霧谷遺跡：灰藍色霧氣、入口與祭壇告示牌
+  if (cx + VIEW_W > RUIN_X - 300) {
+    const g = ctx.createLinearGradient(RUIN_X - 300, 0, RUIN_X + 200, 0);
+    g.addColorStop(0, 'rgba(70,84,110,0)'); g.addColorStop(1, 'rgba(70,84,110,.22)');
+    ctx.fillStyle = g; ctx.fillRect(RUIN_X - 300, cy - 10, WORLD_W - RUIN_X + 300, VIEW_H + 20);
+    sign(RUIN_X - 80, '霧谷遺跡 ▶', '建議 Lv.18 以上', '#a9a6b4', '#2f2d38', '#1f1d28');
+    sign(ARENA_X - 150, '守衛祭壇 ▶', 'Boss・建議 Lv.28', '#c98a8a', '#3a1a1a', '#2a0d0d');
   }
   // 村莊招牌
   ctx.fillStyle = '#6b4a2f'; ctx.fillRect(338, GROUND_Y - 58, 6, 58);
@@ -2357,10 +3133,12 @@ function render() {
   ctx.textAlign = 'center'; ctx.font = `800 13px ${FONT}`; ctx.fillStyle = '#3a2516'; ctx.fillText('晨霧村 ▶ 森林', 342, GROUND_Y - 52);
   drawNpcs();
   drawDrops();
+  for (const m of G.monsters) if (m.d.boss) drawBossTele(m);
   for (const m of G.monsters) drawMonster(m);
   drawLevelFx();
   drawPlayer();
   drawProjs();
+  drawHazards();
   drawFxs();
   drawParts();
   drawTexts();
@@ -2370,9 +3148,17 @@ function render() {
     for (let i = 0; i < 3; i++) { const x = ((G.time * (12 + i * 6) - cx * 0.9 + i * 600) % (VIEW_W + 600) + VIEW_W + 600) % (VIEW_W + 600) - 300; ctx.beginPath(); ctx.ellipse(x, VIEW_H - 30 - i * 40, 260, 26, 0, 0, Math.PI * 2); ctx.fill(); }
   }
   drawMinimap();
+  drawBossBar();
   drawTracker();
   drawToasts();
   drawBanners();
+}
+// 告示牌（世界座標，x 為中心）
+function sign(x, t1, t2, fill, line, ink) {
+  ctx.fillStyle = '#4a3a3a'; ctx.fillRect(x - 3, GROUND_Y - 58, 6, 58);
+  shape(fill, () => rr(x - 50, GROUND_Y - 76, 100, 30, 4), 2, line);
+  ctx.textAlign = 'center'; ctx.font = `800 12px ${FONT}`; ctx.fillStyle = ink;
+  ctx.fillText(t1, x, GROUND_Y - 63); ctx.fillText(t2, x, GROUND_Y - 50);
 }
 
 // ================= HUD（DOM） =================
@@ -2406,6 +3192,7 @@ function updateHud() {
   setCls('mbSkill', 'dot', p.sp > 0 && Object.keys(SKILLS).some(id => !learnBlock(p, id)));
   setCls('mbQuest', 'dot', QUESTS.some(qReady));
   setCls('mbAcct', 'dot', !!CLOUD.pending);
+  setCls('menuBtn', 'dot', hudCache.mbSkilldot || hudCache.mbQuestdot || !!CLOUD.pending);
   setCls('slotHp', 'lack', p.pots.hp <= 0); setCls('slotMp', 'lack', p.pots.mp <= 0);
 }
 
@@ -2420,6 +3207,7 @@ function layout() {
   if (dpad.parentNode !== tl) tl.appendChild(dpad);
   if (acts.parentNode !== tr) tr.appendChild(acts);
   $('sideL').style.display = $('sideR').style.display = land ? 'flex' : 'none';
+  $('rotHint').classList.toggle('show', isTouch && H > W && !G.rotSeen);   // 觸控裝置直向時，提示轉為橫向
   $('bottomCtl').style.display = isTouch && !land ? 'flex' : 'none';
   dpad.style.display = acts.style.display = isTouch ? 'grid' : 'none';
   const sideW = land ? $('sideL').offsetWidth + $('sideR').offsetWidth : 0;
@@ -2455,7 +3243,7 @@ function saveState() {
     player: {
       lv: p.lv, exp: p.exp, hp: p.dead ? 0 : p.hp, mp: p.mp, coins: p.coins, pots: { hp: p.pots.hp, mp: p.pots.mp }, x: p.x, y: p.y, face: p.face,
       job: p.job, sp: p.sp, skills: p.skills, keys: p.keys, equip: p.equip, bag: p.bag, etc: p.etc, quests: p.quests,
-      stats: { kills: p.stats.kills },
+      stats: { kills: p.stats.kills, bossKills: p.stats.bossKills },
     },
     hintSeen: !G.hint,
   };
@@ -2486,7 +3274,7 @@ function loadLocal() {
 const CLOUD_KEY = 'mistwood_cloud';                 // 登入資訊（token）存在這台裝置
 const CLOUD_TIMEOUT = 8000, CLOUD_GAP = 30000;      // 連線逾時 8 秒；一般存檔最多每 30 秒上傳一次
 const USER_RE = /^[A-Za-z0-9_\u4e00-\u9fff]{2,12}$/;
-const RANK_BY = [['level', '等級'], ['kills', '擊殺數'], ['gold', '金幣']];
+const RANK_BY = [['level', '等級'], ['kills', '擊殺數'], ['gold', '金幣'], ['boss', 'Boss']];
 const CLOUD_TABS = [['account', '帳號', 'L'], ['rank', '排行榜', 'R']];
 const CLOUD = {
   token: null, user: '', lastSync: 0,
@@ -2494,7 +3282,7 @@ const CLOUD = {
   busy: false, uploading: false, again: false, lastUpload: 0, timer: null, timerAt: 0,
   pending: null,            // 雲端與本機存檔不同時，等待玩家選擇：{ save, at }
   form: { user: '', pass: '' }, msg: '', msgOk: false,
-  rank: { by: 'level', data: {}, loading: false, err: '', errT: 0 },
+  rank: { by: 'level', data: {}, loading: false, err: '', errT: 0, unsup: false },   // unsup：舊版後端不支援 Boss 排行榜
 };
 function cloudLoadToken() {
   try {
@@ -2576,7 +3364,7 @@ function cloudQueue(force) {
 }
 function hasLocalProgress() {
   const p = G.player;
-  return !!p && (p.lv > 1 || p.exp > 0 || p.coins > 0 || p.stats.kills > 0 || Object.keys(p.quests).length > 0);
+  return !!p && (p.lv > 1 || p.exp > 0 || p.coins > 0 || p.stats.kills > 0 || p.stats.bossKills > 0 || Object.keys(p.quests).length > 0);
 }
 // 登入後（或開啟遊戲時已是登入狀態）比對雲端與本機存檔
 async function cloudCheck(atStartup) {
@@ -2603,7 +3391,7 @@ async function cloudCheck(atStartup) {
 function cloudApply(save) {
   CLOUD.pending = null; G.ui.confirm = null;
   G.player = makePlayer(save.player);
-  G.drops = []; G.projs = []; G.fxs = []; G.timers = []; G.monsters = SPAWNS.map(makeMonster);
+  resetWorld();
   closeDlg();
   updateCamera(0, true);
   const s = saveState();
@@ -2677,7 +3465,11 @@ async function rankLoad(by) {
   try {
     const r = await api('GET', `/api/leaderboard?by=${by}&limit=20`);
     R.data[by] = { t: Date.now(), list: Array.isArray(r.entries) ? r.entries : [], me: r.me || null, total: +r.total || 0 };
-  } catch (e) { R.err = (e && e.msg) || '讀取失敗'; R.errT = Date.now(); }
+    if (by === 'boss') R.unsup = false;
+  } catch (e) {
+    R.err = (e && e.msg) || '讀取失敗'; R.errT = Date.now();
+    if (by === 'boss' && e && e.status && !e.offline) R.unsup = true;   // 伺服器回應錯誤：多半是後端還沒更新到第四階段
+  }
   R.loading = false;
   if (G.ui.win === 'rank') renderWin();
 }
@@ -2696,12 +3488,28 @@ function saveCard(title, pl, at, act, label) {
     <div class="st"><span class="dim">等級</span><span>Lv.${clamp(n(pl.lv, 1), 1, 200)}</span></div>
     <div class="st"><span class="dim">金幣</span><span>${n(pl.coins, 0).toLocaleString()}</span></div>
     <div class="st"><span class="dim">擊殺數</span><span>${n(pl.stats && pl.stats.kills, 0).toLocaleString()}</span></div>
+    <div class="st"><span class="dim">Boss 擊殺</span><span>${n(pl.stats && pl.stats.bossKills, 0).toLocaleString()}</span></div>
     <div class="st"><span class="dim">更新時間</span><span>${fmtTime(at)}</span></div>
     <div class="acts2"><button class="sb ${cf ? 'red' : ''}" data-do="${act}">${cf ? '確定使用？' : label}</button></div></div>`;
 }
 
-// ================= 視窗（技能 / 背包 / 裝備 / 任務 / 商店 / 帳號 / 排行榜） =================
+// 角色紀錄（帳號視窗用）
+function recordCard() {
+  const p = G.player;
+  return `<div class="hd">角色紀錄</div><div class="sgrid">
+    <div class="st"><span class="dim">職業</span><b>${JOBS[p.job].name}</b></div><div class="st"><span class="dim">等級</span><b>Lv.${p.lv}</b></div>
+    <div class="st"><span class="dim">累計擊殺</span><b>${p.stats.kills.toLocaleString()}</b></div><div class="st"><span class="dim">Boss 擊殺</span><b>${p.stats.bossKills.toLocaleString()}</b></div></div>`;
+}
+// 按鍵說明（設定視窗）
+const KEY_HELP = [
+  ['← →', '移動'], ['↑ ↓', '攀爬繩索／趴下'], ['Alt / 空白鍵', '跳躍（↓ + 跳躍：從平台跳下）'], ['Ctrl / Z', '普通攻擊'],
+  ['X / A / S / D', '技能快捷鍵'], ['1 / 2', '紅色／藍色藥水'], ['↑ / Enter', '和 NPC 對話'],
+  ['K / I / E / Q', '技能／背包／裝備／任務'], ['L / R', '帳號／排行榜'], ['O / Esc', '設定（沒有開視窗時按 Esc）'],
+];
+
+// ================= 視窗（技能 / 背包 / 裝備 / 任務 / 商店 / 帳號 / 排行榜 / 設定 / 選單） =================
 const WIN_TABS = [['skill', '技能', 'K'], ['bag', '背包', 'I'], ['equip', '裝備', 'E'], ['quest', '任務', 'Q']];
+const LIVE_WINS = ['skill', 'bag', 'equip', 'quest', 'shop', 'menu'];   // 遊戲進行中會自動更新內容的視窗
 const fmtStat = (k, v) => (k === 'crit' || k === 'spd') ? `+${v}%` : `+${v}`;
 const npcName = id => NPCS.find(n => n.id === id).name;
 function uiBusy() { return !!(G.ui.win || G.ui.dlg); }
@@ -2712,8 +3520,12 @@ function openWin(name) {
   G.ui.win = name; G.ui.confirm = null; releaseAll(); SFX.click(); renderWin(true);
 }
 function closeWin() { if (!G.ui.win) return; G.ui.win = null; G.ui.confirm = null; releaseAll(); renderWin(); }
-function skillList(p) {
-  const ids = Object.keys(SKILLS).filter(id => skillUsable(p, id)), out = [];
+// 技能分頁：1 = 新手＋一轉，2 = 二轉（尚未二轉時預覽對應的二轉技能）
+const skillTab = id => JOBS[SKILLS[id].job].base ? 2 : 1;
+function job2Of(p) { return JOBS[p.job].base ? p.job : JOB2_OF[p.job] || null; }
+function skillList(p, tab = 1) {
+  const j2 = job2Of(p);
+  const ids = Object.keys(SKILLS).filter(id => tab === 2 ? SKILLS[id].job === j2 : skillTab(id) === 1 && skillUsable(p, id)), out = [];
   const add = id => { out.push(id); ids.filter(c => SKILLS[c].req && Object.keys(SKILLS[c].req)[0] === id).forEach(add); };
   ids.filter(id => !SKILLS[id].req).forEach(add);
   return out;
@@ -2721,10 +3533,10 @@ function skillList(p) {
 function skillDepth(id) { let d = 0, S = SKILLS[id]; while (S.req) { d++; S = SKILLS[Object.keys(S.req)[0]]; } return d; }
 function itemDetail(it, cmp) {
   const p = G.player, B = ITEMS[it.b], R = RARITY[it.r];
-  const lvOk = p.lv >= B.lv, jobOk = !B.jobs || B.jobs.includes(p.job);
-  let h = `<div class="nm" style="color:${R.color}">${esc(B.name)} <span class="tg">${R.name}</span><span class="tg">${SLOTS[B.slot]}</span></div>`;
+  const lvOk = p.lv >= B.lv, jobOk = jobFits(p.job, B.jobs);
+  let h = `<div class="nm" style="color:${R.color}">${esc(B.name)} <span class="tg"${it.r >= 3 ? ' style="background:#7a5a14"' : ''}>${R.name}</span><span class="tg">${SLOTS[B.slot]}</span></div>`;
   h += `<div class="st"><span class="dim">需求等級</span><span class="${lvOk ? '' : 'bad'}">Lv.${B.lv}</span></div>`;
-  h += `<div class="st"><span class="dim">可用職業</span><span class="${jobOk ? '' : 'bad'}">${B.jobs ? B.jobs.map(j => JOBS[j].name).join('／') : '全職業'}</span></div>`;
+  h += `<div class="st"><span class="dim">可用職業</span><span class="${jobOk ? '' : 'bad'}">${B.jobs ? jobsText(B.jobs) : '全職業'}</span></div>`;
   const cmpOn = cmp !== undefined && cmp !== it;
   for (const k of STAT_ORDER) {
     const v = it.st[k] || 0, c = cmpOn ? (cmp ? cmp.st[k] || 0 : 0) : null;
@@ -2738,9 +3550,15 @@ function itemDetail(it, cmp) {
 }
 const WIN = {
   skill() {
-    const p = G.player, list = skillList(p);
-    const sel = G.ui.sel.skill = clamp(G.ui.sel.skill, 0, list.length - 1);
-    let h = `<div class="hd">剩餘技能點：<span style="font-size:16px">${p.sp}</span> <span class="dim" style="font-weight:600;font-size:12px">（每升一級獲得 ${SP_PER_LV} 點）</span></div>`;
+    const p = G.player, tab = G.ui.skTab === 2 ? 2 : 1, list = skillList(p, tab);
+    const sel = G.ui.sel.skill = clamp(G.ui.sel.skill, 0, Math.max(0, list.length - 1));
+    let h = `<div class="rtabs">${[[1, '一轉'], [2, '二轉']].map(([t, nm]) => `<button class="sb ${tab === t ? '' : 'alt'}" data-do="skTab" data-a="${t}">${nm}</button>`).join('')}</div>`;
+    h += `<div class="hd">剩餘技能點：<span style="font-size:16px">${p.sp}</span> <span class="dim" style="font-weight:600;font-size:12px">（每升一級獲得 ${SP_PER_LV} 點）</span></div>`;
+    if (tab === 2) {
+      const j2 = job2Of(p);
+      if (!j2) h += `<div class="det dim">完成一轉（Lv.${JOB_LV}）後，這裡會顯示對應的二轉技能。到 Lv.${JOB2_LV} 可找轉職導師雷歐接受二轉試煉。</div>`;
+      else if (!JOBS[p.job].base) h += `<div class="det dim">以下是「${JOBS[j2].name}」的技能（預覽）。到達 Lv.${JOB2_LV} 後找轉職導師雷歐接受二轉試煉，即可學習。二轉後一轉技能仍可使用。</div>`;
+    }
     let lastJob = null;
     list.forEach((id, i) => {
       const S = SKILLS[id], lv = p.skills[id] || 0, why = learnBlock(p, id), dep = skillDepth(id);
@@ -2757,8 +3575,8 @@ const WIN = {
         ${S.type !== 'passive' && lv > 0 ? `<div class="binds">快捷鍵 ${SLOT_KEYS.map((k, j) => `<button class="bk ${p.keys[j] === id ? 'on' : ''}" data-do="bind" data-a="${id}" data-b="${j}">${k}</button>`).join('')}</div>` : ''}
         </div><button class="sb" data-do="learn" data-a="${id}" ${why ? 'disabled' : ''} title="${why || '加 1 點'}" aria-label="學習${S.name}">＋1</button></div>`;
     });
-    if (p.job === 'novice') h += `<div class="det dim">到達 Lv.${JOB_LV} 後，找村口的轉職導師雷歐接受試煉，即可轉職為劍士、弓箭手或法師，開放職業技能樹。多的技能點會保留下來。</div>`;
-    return [h, '<span class="keyOnly">↑↓ 選擇・Enter 加點・按 X／A／S／D 綁定快捷鍵</span><span class="touchOnly">點「＋1」加點，點 X／A／S／D 綁定按鈕</span>'];
+    if (p.job === 'novice' && tab === 1) h += `<div class="det dim">到達 Lv.${JOB_LV} 後，找村口的轉職導師雷歐接受試煉，即可轉職為劍士、弓箭手或法師，開放職業技能樹。多的技能點會保留下來。</div>`;
+    return [h, '<span class="keyOnly">↑↓ 選擇・←→ 切換一轉／二轉・Enter 加點・按 X／A／S／D 綁定快捷鍵</span><span class="touchOnly">點「＋1」加點，點 X／A／S／D 綁定按鈕</span>'];
   },
   bag() {
     const p = G.player, n = Math.max(BAG_MAX, p.bag.length);
@@ -2788,7 +3606,7 @@ const WIN = {
     const slot = SLOT_ORDER[sel], it = p.equip[slot];
     h += it ? `<div class="det">${itemDetail(it)}<div class="acts2"><button class="sb alt" data-do="unequip" data-a="${slot}">卸下</button></div></div>`
             : `<div class="det dim">${SLOTS[slot]}欄位尚未裝備。打倒怪物或在商店購買裝備後，到背包（I）點選「穿上」。</div>`;
-    const rows = [['職業', JOBS[p.job].name], ['等級', 'Lv.' + p.lv], ['HP', p.maxHp], ['MP', p.maxMp], ['攻擊', p.atk], ['防禦', p.def], ['爆擊率', Math.round(p.crit * 100) + '%'], ['移動速度', Math.round(p.spd * 100) + '%'], ['累計擊殺', p.stats.kills.toLocaleString()], ['金幣', p.coins.toLocaleString()]];
+    const rows = [['職業', JOBS[p.job].name], ['等級', 'Lv.' + p.lv], ['HP', p.maxHp], ['MP', p.maxMp], ['攻擊', p.atk], ['防禦', p.def], ['爆擊率', Math.round(p.crit * 100) + '%'], ['移動速度', Math.round(p.spd * 100) + '%'], ['累計擊殺', p.stats.kills.toLocaleString()], ['Boss 擊殺', p.stats.bossKills.toLocaleString()], ['金幣', p.coins.toLocaleString()]];
     h += '<div class="sgrid">' + rows.map(([a, b]) => `<div class="st"><span class="dim">${a}</span><b>${b}</b></div>`).join('') + '</div>';
     const bs = Object.keys(p.buffs);
     if (bs.length) h += `<div class="d ok" style="margin-top:4px">增益中：${bs.map(id => SKILLS[id].name).join('、')}</div>`;
@@ -2822,7 +3640,7 @@ const WIN = {
         const pot = key.startsWith('pot:'), price = shopPrice(key);
         let name, d, bad = '';
         if (pot) { const k = key.slice(4); name = POTION[k].name; d = `回復 ${POTION[k].heal} ${k.toUpperCase()}・持有 ${p.pots[k]}`; }
-        else { const B = ITEMS[key]; name = B.name; bad = equipBlock(p, shopItem(key)); d = `${SLOTS[B.slot]}・Lv.${B.lv}・${B.jobs ? B.jobs.map(j => JOBS[j].name).join('／') : '全職業'}・${STAT_ORDER.filter(k => B.st[k]).map(k => STAT_NAMES[k] + fmtStat(k, B.st[k])).join(' ')}`; }
+        else { const B = ITEMS[key]; name = B.name; bad = equipBlock(p, shopItem(key)); d = `${SLOTS[B.slot]}・Lv.${B.lv}・${B.jobs ? jobsText(B.jobs) : '全職業'}・${STAT_ORDER.filter(k => B.st[k]).map(k => STAT_NAMES[k] + fmtStat(k, B.st[k])).join(' ')}`; }
         h += `<div class="row ${i === sel ? 'sel' : ''}" data-do="sel" data-a="${i}"><img src="${itemIcon(key).url}" alt=""><div class="grow"><div class="t">${name}</div><div class="d ${bad ? 'bad' : ''}">${d}</div><div class="d" style="color:#ffd56b">${price} 金幣</div></div>
           <div style="display:flex;flex-direction:column;gap:4px"><button class="sb" data-do="buy" data-a="${key}" data-b="1" ${p.coins < price ? 'disabled' : ''}>購買</button>${pot ? `<button class="sb" data-do="buy" data-a="${key}" data-b="10" ${p.coins < price * 10 ? 'disabled' : ''}>×10</button>` : ''}</div></div>`;
       });
@@ -2839,7 +3657,7 @@ const WIN = {
     return [h, `<span>金幣 <b>${p.coins.toLocaleString()}</b></span><span>背包 ${p.bag.length} / ${BAG_MAX}</span><span class="keyOnly">←→ 切換購買／賣出・↑↓ 選擇・Enter 確認</span>`];
   },
   account() {
-    if (!API.ready) return [CLOUD_NOT_READY, ''];
+    if (!API.ready) return [CLOUD_NOT_READY + recordCard(), ''];
     const busy = CLOUD.busy ? 'disabled' : '';
     let h = '';
     if (!CLOUD.token) {
@@ -2850,7 +3668,7 @@ const WIN = {
         <div class="d dim" style="margin-top:4px">帳號 2～12 個字（英文字母、數字、底線或中文）；密碼至少 6 碼。</div>
         <div class="acts2"><button class="sb" type="submit" ${busy}>登入</button><button class="sb alt" type="button" data-do="register" ${busy}>註冊新帳號</button></div>
         <div class="msg ${CLOUD.msgOk ? 'ok' : 'bad'}">${esc(CLOUD.msg)}</div></form>
-        <div class="d dim">不登入也能正常遊玩，進度會保存在這台裝置。</div>`;
+        <div class="d dim">不登入也能正常遊玩，進度會保存在這台裝置。</div>` + recordCard();
       return [h, '<span class="keyOnly">輸入完按 Enter 登入・Esc 關閉</span>'];
     }
     if (CLOUD.pending) {
@@ -2871,7 +3689,7 @@ const WIN = {
       </div>
       ${CLOUD.msg && (CLOUD.state === 'offline' || CLOUD.state === 'error') ? `<div class="d bad" style="margin-top:4px">${esc(CLOUD.msg)}</div>` : ''}
       <div class="d dim" style="margin-top:6px">登入期間每 30 秒自動上傳一次；升級、轉職、完成任務時會立即上傳。</div>
-      <div class="acts2"><button class="sb" data-do="syncNow" ${busy}>立即同步</button><button class="sb alt" data-do="tab" data-a="rank">查看排行榜</button><button class="sb red" data-do="logout" ${busy}>登出</button></div>`;
+      <div class="acts2"><button class="sb" data-do="syncNow" ${busy}>立即同步</button><button class="sb alt" data-do="tab" data-a="rank">查看排行榜</button><button class="sb red" data-do="logout" ${busy}>登出</button></div>` + recordCard();
     return [h, `<span>伺服器：${esc(API.base.replace(/^https?:\/\//, ''))}</span>`];
   },
   rank() {
@@ -2880,19 +3698,21 @@ const WIN = {
       `<button class="sb alt" data-do="rankRefresh" style="margin-left:auto" ${R.loading || !API.ready ? 'disabled' : ''}>重新整理</button></div>`;
     if (!API.ready) return [h + CLOUD_NOT_READY, ''];
     let d = R.data[R.by];
-    if (!R.loading && (!d || Date.now() - d.t > 30000) && Date.now() - R.errT > 10000) rankLoad(R.by);   // 超過 30 秒自動重新讀取
+    const unsup = R.by === 'boss' && R.unsup;
+    if (!R.loading && !unsup && (!d || Date.now() - d.t > 30000) && Date.now() - R.errT > 10000) rankLoad(R.by);   // 超過 30 秒自動重新讀取
     d = R.data[R.by];
-    if (!d) h += `<div class="det dim">${R.loading ? '讀取排行榜中…' : `無法讀取排行榜：${esc(R.err)}。請稍後按「重新整理」。`}</div>`;
+    if (!d && unsup) h += `<div class="det">Boss 排行榜即將開放：伺服器還沒更新到支援 Boss 擊殺數的版本。<div class="d dim" style="margin-top:4px">你目前的 Boss 擊殺數為 ${G.player.stats.bossKills} 次，會隨存檔一起上傳，伺服器更新後就會出現在排行榜上。</div></div>`;
+    else if (!d) h += `<div class="det dim">${R.loading ? '讀取排行榜中…' : `無法讀取排行榜：${esc(R.err)}。請稍後按「重新整理」。`}</div>`;
     else {
       if (R.err) h += `<div class="d bad" style="margin-bottom:4px">更新失敗：${esc(R.err)}（顯示先前的資料）</div>`;
       if (!d.list.length) h += '<div class="det dim">目前還沒有人上榜。登入並上傳存檔，就能成為第一名！</div>';
       const me = CLOUD.user.toLowerCase(), n = v => Math.max(0, Math.floor(+v || 0));
-      const val = v => R.by === 'level' ? `Lv.${n(v)}` : R.by === 'kills' ? `${n(v).toLocaleString()} 隻` : `${n(v).toLocaleString()} 金幣`;
+      const val = v => R.by === 'level' ? `Lv.${n(v)}` : R.by === 'kills' ? `${n(v).toLocaleString()} 隻` : R.by === 'boss' ? `${n(v).toLocaleString()} 次` : `${n(v).toLocaleString()} 金幣`;
       d.list.forEach(e => {
         const mine = !!me && String(e.username).toLowerCase() === me;
         h += `<div class="row ${mine ? 'me' : ''}"><div class="rk">${n(e.rank)}</div>
           <div class="grow"><div class="t">${esc(e.username)}${mine ? '<span class="tg" style="background:#2f5f8a">你</span>' : ''}<span class="tg">${JOBS[e.job] ? JOBS[e.job].name : '新手'}</span></div>
-          <div class="d dim">Lv.${n(e.level)}・擊殺 ${n(e.kills).toLocaleString()}・金幣 ${n(e.gold).toLocaleString()}</div></div>
+          <div class="d dim">Lv.${n(e.level)}・擊殺 ${n(e.kills).toLocaleString()}${e.bossKills !== undefined ? `・Boss ${n(e.bossKills).toLocaleString()}` : ''}・金幣 ${n(e.gold).toLocaleString()}</div></div>
           <div class="val">${val(e.value)}</div></div>`;
       });
     }
@@ -2900,7 +3720,35 @@ const WIN = {
     if (CLOUD.token) foot = d && d.me && d.me.rank ? `<span>你的名次：<b>第 ${n0(d.me.rank)} 名</b>（共 ${n0(d.total)} 人）</span>` : '<span>你還沒上榜（存檔上傳後就會出現）</span>';
     return [h, foot + '<span class="keyOnly">←→ 切換類別</span>'];
   },
+  settings() {
+    const v = Math.round(SETTINGS.vol * 100);
+    const h = `<div class="hd">遊戲</div>
+      <label class="setrow"><input type="checkbox" id="setPause" ${SETTINGS.pause ? 'checked' : ''}>開視窗時暫停遊戲<span class="dim" style="font-weight:600;font-size:11.5px;margin-left:auto">預設關閉</span></label>
+      <div class="d dim" style="margin:-2px 0 6px">關閉時（像楓之谷一樣），開著視窗或和 NPC 對話時怪物仍會行動；開啟後會和以前一樣暫停。</div>
+      <div class="hd">音效</div>
+      <div class="st"><span>主音量</span><b id="volT">${v}%</b></div>
+      <input type="range" class="rng" id="setVol" min="0" max="100" step="5" value="${v}" aria-label="主音量">
+      <label class="setrow"><input type="checkbox" id="setMute" ${SETTINGS.mute ? 'checked' : ''}>靜音</label>
+      <div class="hd">按鍵說明</div>
+      <table class="keys keyOnly">${KEY_HELP.map(([k, t]) => `<tr><td>${k}</td><td>${t}</td></tr>`).join('')}</table>
+      <div class="d touchOnly">觸控操作：左側方向鍵移動／攀爬（▲ 也能和 NPC 對話），右側為攻擊、跳躍、4 個技能與紅／藍藥水；畫面左上角的「選單」開啟各視窗。建議橫向遊玩。</div>
+      <div class="acts2"><button class="sb alt" data-do="help">開啟遊戲說明</button></div>`;
+    return [h, '<span class="keyOnly">←→ 音量・Enter 切換暫停・M 靜音・Esc 關閉</span><span>設定只保存在這台裝置</span>'];
+  },
+  menu() {   // 觸控裝置的選單：開啟所有視窗
+    const items = [['skill', '技能'], ['bag', '背包'], ['equip', '裝備'], ['quest', '任務'], ['account', '帳號'], ['rank', '排行榜'], ['settings', '設定'], ['help', '說明']];
+    const dot = { skill: !!hudCache.mbSkilldot, quest: !!hudCache.mbQuestdot, account: !!CLOUD.pending };
+    return ['<div class="mgrid">' + items.map(([id, nm]) => `<button class="mitem ${dot[id] ? 'dot' : ''}" data-do="${id === 'help' ? 'help' : 'tab'}" data-a="${id}">${nm}</button>`).join('') + '</div>', ''];
+  },
 };
+// 遊戲進行中開著視窗時，內容（背包、任務進度、能力值…）有變化就重新繪製
+function refreshWin() {
+  const p = G.player, w = G.ui.win;
+  if (!p || !LIVE_WINS.includes(w)) return;
+  const sig = [w, p.lv, p.sp, p.bag.length, p.coins, p.pots.hp, p.pots.mp, p.maxHp, p.maxMp, p.atk, p.def, p.stats.kills, Object.keys(p.buffs).join(),
+    JSON.stringify(p.etc), QUESTS.map(Q => qProgress(Q) + (qAvail(Q) ? 'a' : '')).join()].join('|');
+  if (sig !== G.winSig) { const same = G.winSig.split('|')[0] === w; G.winSig = sig; if (same) renderWin(); }
+}
 function renderWin(resetScroll) {
   const el = $('win'), w = G.ui.win;
   if (!w) { el.classList.remove('show'); el.innerHTML = ''; return; }
@@ -2909,6 +3757,7 @@ function renderWin(resetScroll) {
   let head = '<div class="wh">';
   if (w === 'account' || w === 'rank') head += CLOUD_TABS.map(([id, nm, k]) => `<button class="tab ${w === id ? 'on' : ''}" data-do="tab" data-a="${id}">${nm}<small>${k}</small></button>`).join('');
   else if (w === 'shop') head += '<span class="wt">葛蘭的商店</span>' + [['buy', '購買'], ['sell', '賣出']].map(([t, nm]) => `<button class="tab ${G.ui.shopTab === t ? 'on' : ''}" data-do="stab" data-a="${t}">${nm}</button>`).join('');
+  else if (w === 'settings' || w === 'menu') head += `<span class="wt">${w === 'menu' ? '選單' : '設定'}</span>` + (isTouch && w === 'settings' ? '<button class="tab" data-do="tab" data-a="menu">◀ 選單</button>' : '');
   else head += WIN_TABS.map(([id, nm, k]) => `<button class="tab ${w === id ? 'on' : ''}" data-do="tab" data-a="${id}">${nm}<small>${k}</small></button>`).join('');
   head += '<button class="xbtn" data-do="close" aria-label="關閉視窗">✕</button></div>';
   const [body, foot] = WIN[w]();
@@ -2949,7 +3798,11 @@ function uiAction(act, a, b) {
     case 'useLocal': if (G.ui.confirm === 'useLocal') { G.ui.confirm = null; cloudUseLocal(); } else { G.ui.confirm = 'useLocal'; SFX.click(); } break;
     case 'useCloud': if (G.ui.confirm === 'useCloud') { G.ui.confirm = null; cloudUseCloud(); } else { G.ui.confirm = 'useCloud'; SFX.click(); } break;
     case 'rankBy': CLOUD.rank.by = a; SFX.click(); break;
-    case 'rankRefresh': { const d = CLOUD.rank.data[CLOUD.rank.by]; if (d) d.t = 0; CLOUD.rank.errT = 0; SFX.click(); break; }
+    case 'rankRefresh': { const d = CLOUD.rank.data[CLOUD.rank.by]; if (d) d.t = 0; CLOUD.rank.errT = 0; CLOUD.rank.unsup = false; SFX.click(); break; }
+    case 'skTab': G.ui.skTab = +a === 2 ? 2 : 1; G.ui.sel.skill = 0; SFX.click(); renderWin(true); return;
+    case 'setPause': SETTINGS.pause = !SETTINGS.pause; saveSettings(); SFX.click(); break;
+    case 'setMute': SETTINGS.mute = !SETTINGS.mute; saveSettings(); applyVolume(); updateMuteBtn(); SFX.click(); break;
+    case 'help': closeWin(); openHint(); return;
   }
   renderWin();
 }
@@ -2965,8 +3818,9 @@ function winKey(e) {
   if (e.repeat && !nav) return true;
   G.ui.kbd = true;
   if (w === 'skill') {
-    const list = skillList(p), id = list[G.ui.sel.skill];
-    if (vert) { G.ui.sel.skill = clamp(G.ui.sel.skill + nav, 0, list.length - 1); renderWin(); return true; }
+    const list = skillList(p, G.ui.skTab), id = list[G.ui.sel.skill];
+    if (vert) { G.ui.sel.skill = clamp(G.ui.sel.skill + nav, 0, Math.max(0, list.length - 1)); renderWin(); return true; }
+    if (nav) { uiAction('skTab', G.ui.skTab === 2 ? '1' : '2'); return true; }
     if (enter && id) { uiAction('learn', id); return true; }
     const si = { KeyX: 0, KeyA: 1, KeyS: 2, KeyD: 3 }[c];
     if (si !== undefined && id) {
@@ -2994,9 +3848,16 @@ function winKey(e) {
       const i = RANK_BY.findIndex(r => r[0] === CLOUD.rank.by);
       uiAction('rankBy', RANK_BY[(i + nav + RANK_BY.length) % RANK_BY.length][0]); return true;
     }
+  } else if (w === 'settings') {
+    if (c === 'ArrowLeft' || c === 'ArrowRight') { SETTINGS.vol = clamp(Math.round(SETTINGS.vol * 20 + nav) / 20, 0, 1); applyVolume(); saveSettings(); SFX.click(); renderWin(); return true; }
+    if (enter) { uiAction('setPause'); return true; }
+    if (c === 'KeyM') { uiAction('setMute'); return true; }
   }
   G.ui.kbd = false;
-  return !!nav || enter || !!KEYMAP[c];
+  // 遊戲沒有暫停時，視窗沒用到的遊戲按鍵（攻擊、跳躍、技能、藥水）照常作用
+  const a = KEYMAP[c];
+  if (a && !nav && !enter && !SETTINGS.pause) { setAction(a, true); return true; }
+  return !!nav || enter || !!a;
 }
 
 // ================= NPC 對話框 =================
@@ -3046,22 +3907,36 @@ function closeHint() {
   if (G.intro === 0 && !G.introShown) { G.intro = 3.6; G.introShown = true; }
 }
 function openHint() { G.hint = true; releaseAll(); $('hint').classList.add('show'); }
-function updateMuteBtn() { $('muteBtn').textContent = muted ? '音效：關' : '音效：開'; }
+function updateMuteBtn() { $('muteBtn').textContent = SETTINGS.mute ? '音效：關' : '音效：開'; }
 function setupUI() {
   $('startBtn').addEventListener('click', e => { e.stopPropagation(); closeHint(); });
-  $('hint').addEventListener('click', e => { if (e.target.id !== 'resetBtn') closeHint(); });
-  $('resetBtn').addEventListener('click', e => {
+  $('hint').addEventListener('click', e => { if (!e.target.closest('#resetBtn, #resetBox')) closeHint(); });
+  // 重置進度：需再按一次確認；只清除本機進度，不會登出雲端帳號（新的進度之後照常同步，會覆蓋雲端存檔）
+  $('resetBtn').addEventListener('click', e => { e.stopPropagation(); initAudio(); SFX.click(); $('resetBox').classList.toggle('show'); });
+  $('resetNo').addEventListener('click', e => { e.stopPropagation(); $('resetBox').classList.remove('show'); });
+  $('resetYes').addEventListener('click', e => {
     e.stopPropagation();
     try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(OLD_SAVE_KEY); } catch (err) {}
-    G.player = makePlayer({}); G.drops = []; G.projs = []; G.fxs = []; G.timers = []; G.monsters = SPAWNS.map(makeMonster);
-    G.ui.win = null; G.ui.dlg = null; renderWin(); renderDlg();
-    updateCamera(0, true); $('resetBtn').textContent = '已重置進度';
-    if (CLOUD.token) cloudSignedOut('已重置本機進度並登出雲端（雲端存檔保留）', true);   // 避免把重置後的進度蓋掉雲端存檔
+    G.player = makePlayer({}); resetWorld();
+    G.ui.win = null; G.ui.dlg = null; G.ui.confirm = null; renderWin(); renderDlg();
+    updateCamera(0, true);
+    $('resetBox').classList.remove('show'); $('resetBtn').textContent = '已重置進度';
+    persist(true);
+    toast(cloudOn() ? '已重置本機進度；新的進度會同步到雲端帳號' : '已重置進度', '#d8cfb4');
   });
   $('helpBtn').addEventListener('click', e => { e.currentTarget.blur(); openHint(); });
+  $('menuBtn').addEventListener('click', e => { e.currentTarget.blur(); initAudio(); if (!G.hint && !G.deathShown) openWin('menu'); });   // 觸控裝置：所有視窗的入口
   $('muteBtn').addEventListener('click', e => {
-    initAudio(); muted = !muted; updateMuteBtn(); e.currentTarget.blur();
-    try { localStorage.setItem(SAVE_KEY + '_mute', muted ? '1' : '0'); } catch (err) {}
+    initAudio(); SETTINGS.mute = !SETTINGS.mute; saveSettings(); applyVolume(); updateMuteBtn(); e.currentTarget.blur();
+    if (G.ui.win === 'settings') renderWin();
+  });
+  $('rotOk').addEventListener('click', () => { G.rotSeen = true; try { sessionStorage.setItem('mistwood_rot', '1'); } catch (err) {} $('rotHint').classList.remove('show'); });
+  // 設定視窗：勾選框與音量滑桿
+  $('win').addEventListener('change', e => {
+    const t = e.target;
+    if (t.id === 'setPause') { t.blur(); uiAction('setPause'); }
+    else if (t.id === 'setMute') { t.blur(); uiAction('setMute'); }
+    else if (t.id === 'setVol') { saveSettings(); t.blur(); SFX.coin(); }   // 放開滑桿時播放試聽音效
   });
   $('respawnBtn').addEventListener('click', respawn);
   document.querySelectorAll('.mbtn').forEach(b => b.addEventListener('click', e => {
@@ -3078,6 +3953,7 @@ function setupUI() {
   $('win').addEventListener('input', e => {
     if (e.target.id === 'acUser') CLOUD.form.user = e.target.value;
     else if (e.target.id === 'acPass') CLOUD.form.pass = e.target.value;
+    else if (e.target.id === 'setVol') { SETTINGS.vol = clamp(+e.target.value / 100, 0, 1); applyVolume(); const v = $('volT'); if (v) v.textContent = Math.round(SETTINGS.vol * 100) + '%'; }
   });
   $('win').addEventListener('submit', e => { e.preventDefault(); if (e.target.id === 'acctForm') cloudAuth('login'); });
   $('dlg').addEventListener('click', e => {
@@ -3101,6 +3977,10 @@ function setupUI() {
   });
   updateMuteBtn();
   setupTouch();
+  addEventListener('pointerdown', initAudio, true);   // 第一次點擊／觸控時建立（或恢復）AudioContext
+  // 觸控裝置：避免雙指縮放與頁面捲動（視窗內容、說明卡片仍可捲動）
+  document.addEventListener('gesturestart', e => e.preventDefault());
+  document.addEventListener('touchmove', e => { if (e.touches.length > 1 || !(e.target.closest && e.target.closest('.wb, .card, .dlg'))) e.preventDefault(); }, { passive: false });
   addEventListener('resize', layout);
   addEventListener('orientationchange', () => setTimeout(layout, 150));
   addEventListener('touchstart', enableTouch, { passive: true, once: true });
@@ -3114,7 +3994,8 @@ function frame(now) {
   requestAnimationFrame(frame);
   if (!last) last = now;
   const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
-  if (!G.hint && !uiBusy() && !document.hidden) {
+  const stop = G.hint || document.hidden || paused();   // 預設開視窗不暫停；設定中可改為暫停
+  if (!stop) {
     acc += dt;
     let n = 0;
     while (acc >= STEP && n < 24) { update(STEP); acc -= STEP; n++; for (const k in pressed) pressed[k] = false; }
@@ -3122,6 +4003,7 @@ function frame(now) {
   } else { acc = 0; for (const k in pressed) pressed[k] = false; }
   render();
   updateHud();
+  if (G.ui.win && !stop) { G.winT -= dt; if (G.winT <= 0) { G.winT = 0.4; refreshWin(); } }
 }
 
 // ================= 啟動 =================
@@ -3139,6 +4021,7 @@ function start(data) {
     persist();
   }
   terrain = buildTerrain();
+  try { G.rotSeen = sessionStorage.getItem('mistwood_rot') === '1'; } catch (e) {}
   try { if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) { isTouch = true; document.body.classList.add('touch'); } } catch (e) {}
   setupUI();
   layout();
