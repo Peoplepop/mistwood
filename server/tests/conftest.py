@@ -37,13 +37,16 @@ def register(client):
 
 
 class FakeClock:
-    """可以手動調整的時鐘（取代 app.now_ts），用來測試進度速度與註冊頻率限制"""
+    """可以手動調整的時鐘（取代 app.now_ts 與 app.now_ms），用來測試進度速度、註冊頻率限制與多人同步"""
 
     def __init__(self, start=1_800_000_000):
         self.now = start
 
     def __call__(self):
-        return self.now
+        return int(self.now)
+
+    def ms(self):
+        return int(round(self.now * 1000))
 
     def advance(self, seconds):
         self.now += seconds
@@ -53,4 +56,5 @@ class FakeClock:
 def clock(monkeypatch):
     fake = FakeClock()
     monkeypatch.setattr(app_module, "now_ts", fake)
+    monkeypatch.setattr(app_module, "now_ms", fake.ms)
     return fake

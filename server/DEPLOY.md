@@ -48,7 +48,7 @@ cd ~/mistwood/server
 python -m pytest -q
 ```
 
-看到 `50 passed`（全部通過、沒有 failed）就代表正常。
+看到 `71 passed`（全部通過、沒有 failed）就代表正常。
 
 ## 步驟 3：在 Web 分頁建立網站
 
@@ -135,6 +135,12 @@ pip install -r ~/mistwood/server/requirements.txt
 - 更新後可以用瀏覽器開 https://peoplepop.pythonanywhere.com/api/leaderboard?by=boss 確認，
   有回傳 `{"by": "boss", ...}` 就代表新版已經生效。
 - 被合理性檢查標記的存檔會照樣保存，只是不列入排行榜；Error log 會出現「存檔被標記」的 WARNING，方便查看。
+- **第五階段（多人同步：在線狀態、頻道、聊天）一定要做 `git pull` + Reload**：
+  - 新增 `POST /api/presence`、`GET /api/presence`、`POST /api/chat`。舊後端會回 404，新版前端會顯示「多人連線：伺服器尚未支援」（遊戲其他功能照常）。
+  - 多人同步的資料（在線玩家、聊天、頻率限制）放在**另一個資料庫檔案** `~/mistwood-data/mistwood-live.db`（與 `MISTWOOD_DB` 同資料夾、自動建立，不需要改 WSGI 設定）。這些資料寫入很頻繁、而且只是暫時性的，分開存放可以避免拖慢帳號／存檔資料庫；這個檔案整個刪掉也沒關係（會自動重建，只是目前在線的玩家與最近的聊天會消失）。
+  - `requirements.txt` 沒有變動，不需要重新 `pip install`。
+  - 更新後可以用瀏覽器開 https://peoplepop.pythonanywhere.com/api/presence 確認，有回傳 `{"guest": true, "ch": 1, ...}` 就代表新版已經生效。
+  - PythonAnywhere 不支援 WebSocket，所以前端用 HTTP 輪詢（附近有其他玩家時每位玩家約每秒 2.5 次請求）。付費帳號的 web worker 數量決定能同時處理多少請求；如果玩家變多、回應變慢，可以在 **Web** 分頁增加 worker 數量（需要較高的方案）。
 （前端 `index.html` 推到 GitHub 後，GitHub Pages 會自動更新，不需要動 PythonAnywhere。）
 
 ## 出問題時：查看 log
@@ -161,7 +167,7 @@ tail -n 50 /var/log/peoplepop.pythonanywhere.com.error.log
 
 ## 備份資料庫
 
-所有帳號與存檔都在 `~/mistwood-data/mistwood.db`。在 Bash console 備份：
+所有帳號與存檔都在 `~/mistwood-data/mistwood.db`（`mistwood-live.db` 是多人同步的暫存資料，不需要備份）。在 Bash console 備份：
 
 ```bash
 cp ~/mistwood-data/mistwood.db ~/mistwood-data/backup-$(date +%Y%m%d).db
