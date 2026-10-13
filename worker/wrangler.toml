@@ -1,0 +1,23 @@
+# 晨霧森林 即時連線伺服器（Cloudflare Worker + Durable Objects）
+# 本機測試：npx wrangler dev（密鑰放在 .dev.vars，不要 commit）
+# 部署：見 README.md
+name = "mistwood-rt"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[durable_objects.bindings]]
+name = "CHANNEL"      # 每個頻道一個（idFromName('ch-1') ～ 'ch-10'）
+class_name = "Channel"
+
+[[durable_objects.bindings]]
+name = "LOBBY"        # 全域一個（idFromName('lobby')）：各頻道人數
+class_name = "Lobby"
+
+# SQLite 儲存的 Durable Object（免費方案可用）
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Channel", "Lobby"]
+
+[vars]
+# 額外允許連線的網頁來源（逗號分隔），例如 "https://example.com"
+EXTRA_ORIGINS = ""

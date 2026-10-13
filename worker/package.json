@@ -1,0 +1,15 @@
+{
+  "name": "mistwood-rt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "晨霧森林 第六階段即時連線伺服器（Cloudflare Worker + Durable Objects）",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "4.146.0"
+  }
+}

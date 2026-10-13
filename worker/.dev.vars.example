@@ -1,0 +1,3 @@
+# 複製成 .dev.vars（不要 commit），本機 wrangler dev 會讀取
+# 要和後端的 MISTWOOD_RT_SECRET 相同
+RT_SECRET=換成一長串隨機字串
