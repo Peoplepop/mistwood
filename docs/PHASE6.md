@@ -37,8 +37,8 @@
 - **2026-10-13 完成 6-0、6-1（本機驗證通過，尚未部署）**
   - `worker/`：Worker 入口（Origin 檢查、挑頻道）、`Channel` Durable Object（Hibernation API、位置 10 Hz 合併廣播、聊天＋不雅字詞過濾、怪物 tick 預留 `MOB_SYNC`／`tick()`）、`Lobby` Durable Object（各頻道人數）、票券驗證；`npm test` 單元測試。
   - PA 後端：`POST /api/rt-ticket`（HMAC-SHA256，5 分鐘，內容 uid／name／lv／lvmax／job／iat／exp；未設定 `MISTWOOD_RT_SECRET` 回 503）＋ pytest。
-  - 前端：登入玩家優先走 WebSocket，連不上自動退回 HTTP 輪詢；訪客不再看到其他玩家、不再輪詢；`RT_URL_PROD` 仍是空字串（預設不啟用），測試用 `?rt=`。
-  - 使用者待辦：照 `worker/README.md` 部署（Cloudflare 註冊、`wrangler login`、`secret put RT_SECRET`、`deploy`、PA 設 `MISTWOOD_RT_SECRET` ＋ git pull ＋ Reload、填 `RT_URL_PROD`）。
+  - 前端：登入玩家優先走 WebSocket，連不上自動退回 HTTP 輪詢；訪客不再看到其他玩家、不再輪詢；`RT_URL_PROD` 已設為 `wss://mistwood-rt.b98010327.workers.dev`（2026-10-13 部署並經使用者雙帳號實測通過）。
+  - 已部署：Worker `mistwood-rt.b98010327.workers.dev`、PA 已設 `MISTWOOD_RT_SECRET`（密鑰本機備份在 repo 外 `D:\claude\小k\mistwood_rt_secret.txt`）。
 - 6-2 一般怪同步：尚未開始。
 
 前端在 Worker 正式上線前，同步功能預設關閉（只在 `?rt=` 參數或設定了正式 Worker 網址時啟用），避免 GitHub Pages 先上線卻連不到伺服器。

@@ -272,7 +272,7 @@ python -m pytest -q
 - 有設定即時連線伺服器（`index.html` 的 `RT_URL_PROD`，或網址參數 `?rt=`）時，登入玩家先向 PythonAnywhere 取得短效票券（`POST /api/rt-ticket`），再用 **WebSocket** 連到 Cloudflare Worker 的頻道（`worker/`，每頻道一個 Durable Object）。位置只在有變化時回報，每秒最多 10 次；其他玩家的位置、動作、表情與聊天由伺服器即時推送（位置緩衝縮短為約 0.25 秒）。
 - 換頻道時先連上新頻道才離開舊頻道（新頻道滿了就留在原頻道）；斷線會立刻重連（票券過期會自動重取）；同一個帳號在別的分頁連進同一頻道時，舊分頁暫停多人同步 1 分鐘。
 - **備援**：即時連線連續 2 次連不上就自動改用上面的 HTTP 輪詢，背景每 30 秒重試，連上後自動換回。後端未設定 `MISTWOOD_RT_SECRET`（票券 API 回 503）時安靜地只用 HTTP 輪詢。注意：使用即時連線與使用 HTTP 輪詢的玩家彼此看不到。
-- 目前 `RT_URL_PROD` 是空字串（Worker 尚未部署），所以線上玩家仍只使用 HTTP 輪詢。本機測試：`?api=http://127.0.0.1:5055&rt=ws://127.0.0.1:8787`；`?rt=off` 強制停用。部署步驟見 `worker/README.md`。
+- Worker 已部署於 `wss://mistwood-rt.b98010327.workers.dev`（2026-10-13），登入玩家預設使用 WebSocket，連不上時自動退回 HTTP 輪詢。本機測試：`?api=http://127.0.0.1:5055&rt=ws://127.0.0.1:8787`；`?rt=off` 強制停用。部署步驟見 `worker/README.md`。
 
 ### 存檔
 

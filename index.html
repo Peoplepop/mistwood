@@ -334,7 +334,7 @@ const API_BASE = API.base;
 // 空字串 = 不啟用，只用 PythonAnywhere 的 HTTP 輪詢（行為和第五階段相同）。
 // 測試用網址參數：?rt=ws://127.0.0.1:8787（本機 Worker）、?rt=wss://xxx.workers.dev（已部署的 Worker）、?rt=off（強制停用）
 // 從本機開啟遊戲時接受任何 ws:// 或 wss:// 網址；正式網站只接受 wss://*.workers.dev（避免連線票券被送到奇怪的伺服器）
-const RT_URL_PROD = '';
+const RT_URL_PROD = 'wss://mistwood-rt.b98010327.workers.dev';
 function rtConfig(host) {
   const local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
   let url = RT_URL_PROD;
