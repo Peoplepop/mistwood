@@ -48,7 +48,7 @@ cd ~/mistwood/server
 python -m pytest -q
 ```
 
-看到 `71 passed`（全部通過、沒有 failed）就代表正常。
+看到 `78 passed`（全部通過、沒有 failed）就代表正常。
 
 ## 步驟 3：在 Web 分頁建立網站
 
@@ -141,6 +141,9 @@ pip install -r ~/mistwood/server/requirements.txt
   - `requirements.txt` 沒有變動，不需要重新 `pip install`。
   - 更新後可以用瀏覽器開 https://peoplepop.pythonanywhere.com/api/presence 確認，有回傳 `{"guest": true, "ch": 1, ...}` 就代表新版已經生效。
   - PythonAnywhere 不支援 WebSocket，所以前端用 HTTP 輪詢（附近有其他玩家時每位玩家約每秒 2.5 次請求）。付費帳號的 web worker 數量決定能同時處理多少請求；如果玩家變多、回應變慢，可以在 **Web** 分頁增加 worker 數量（需要較高的方案）。
+- **第六階段（即時連線票券）**：新增 `POST /api/rt-ticket`。要啟用即時連線時，在 WSGI 檔加上
+  `os.environ["MISTWOOD_RT_SECRET"] = "和 Cloudflare Worker 的 RT_SECRET 相同的密鑰"`，再 `git pull` + Reload。
+  沒有設定時這個 API 回 503，前端會繼續使用 HTTP 輪詢（行為和第五階段相同）。完整步驟見 `worker/README.md`。
 （前端 `index.html` 推到 GitHub 後，GitHub Pages 會自動更新，不需要動 PythonAnywhere。）
 
 ## 出問題時：查看 log

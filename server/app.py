@@ -18,6 +18,7 @@ API 一覽（全部使用 JSON，錯誤一律回傳 {"error": "訊息"}）：
     POST /api/presence                   多人同步：回報自己的狀態，同時取得同頻道的其他玩家與新聊天（需要 token）
     GET  /api/presence?ch=1&after=0      訪客觀看：只讀取某個頻道的玩家與聊天（不會出現在別人畫面上）
     POST /api/chat                       頻道聊天（需要 token） {"text": "..."} → {"ok", "msg"}
+    POST /api/rt-ticket                  第六階段：即時連線票券（需要 token）→ {"ticket", "exp", "uid", "username"}
 
 存檔合理性檢查（第四階段）：
     存檔數值明顯超出遊戲可能範圍（例如超過等級上限、型別錯誤）→ 直接回 400，不儲存。
@@ -32,9 +33,15 @@ API 一覽（全部使用 JSON，錯誤一律回傳 {"error": "訊息"}）：
     所以在線狀態與聊天都存在 SQLite（另一個「即時資料庫」檔案，見 schema.sql 的 LIVE 區段），前端用 HTTP 輪詢。
     每次回報都在一個很短的 BEGIN IMMEDIATE 交易內完成（頻率限制 → 分配頻道 → 寫入 → 讀取其他玩家與聊天）。
 
+即時連線（第六階段）：
+    玩家位置與聊天改走 Cloudflare Worker（WebSocket，程式在 worker/）。前端先呼叫 POST /api/rt-ticket 取得
+    短效票券（HMAC-SHA256 簽章，約 5 分鐘），連上 Worker 後送出票券，Worker 用同一把密鑰驗證。
+    密鑰來自環境變數 MISTWOOD_RT_SECRET（Worker 端是 RT_SECRET）；沒有設定時這個 API 回 503，前端自動改用 HTTP 輪詢。
+
 需要登入的 API，前端要在標頭帶上：Authorization: Bearer <token>
 """
 
+import base64
 import hashlib
 import hmac
 import json
@@ -58,12 +65,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # MISTWOOD_DB：SQLite 資料庫檔案路徑
 # MISTWOOD_EXTRA_ORIGINS：額外允許的前端網址（逗號分隔），例如 https://example.com
 # MISTWOOD_LIVE_DB：多人同步用的即時資料庫路徑（預設與 MISTWOOD_DB 同資料夾的 <檔名>-live.db）
+# MISTWOOD_RT_SECRET：即時連線票券的簽章密鑰（要和 Cloudflare Worker 的 RT_SECRET 相同；沒設定 = 不提供票券）
 DEFAULT_SECRET = "dev-secret-請在正式環境修改"
 
 app = Flask(__name__)
 app.config["SECRET"] = os.environ.get("MISTWOOD_SECRET", DEFAULT_SECRET)
 app.config["DB_PATH"] = os.environ.get("MISTWOOD_DB", os.path.join(BASE_DIR, "mistwood.db"))
 app.config["LIVE_DB_PATH"] = os.environ.get("MISTWOOD_LIVE_DB") or None
+app.config["RT_SECRET"] = os.environ.get("MISTWOOD_RT_SECRET", "").strip()
 app.config["MAX_CONTENT_LENGTH"] = 256 * 1024   # 整個請求最大 256KB（超過直接回 413）
 app.json.ensure_ascii = False                    # JSON 裡的中文直接輸出，不轉成 \uXXXX
 
@@ -139,7 +148,11 @@ CHAT_KEEP = 200                 # 每個頻道保留最近幾則
 CHAT_KEEP_MS = 10 * 60 * 1000   # 最多保留 10 分鐘
 CHAT_HISTORY = 20               # 剛進入頻道時回傳最近幾則
 CHAT_BATCH = 50                 # 每次輪詢最多回傳幾則新訊息
+# ---- 第六階段：即時連線票券（Cloudflare Worker 用） ----
+RT_TICKET_SEC = 300             # 票券有效時間（秒）：只在連線（含斷線重連）時檢查，連上之後不會因為過期被踢
+RT_TICKET_RATE = (5, 0.1)       # 取票券的令牌桶（每個帳號）：最多連續 5 次，每 10 秒補 1 次
 # 不雅字詞（中文＋英文常見字），比對時不分大小寫，命中的字元換成「＊」
+# ※ worker/src/chat.js 有一份相同的清單（Worker 端也要過濾），修改時兩邊要一起改（有測試檢查）
 PROFANITY = [   # 注意：不要放太短、容易誤判的字（例如「操」會誤判「操作」、「三小」會誤判「三小時」）
     "幹你娘", "幹您娘", "幹你", "幹妳", "幹恁", "幹拎", "姦你", "操你", "肏", "草你媽", "草泥馬",
     "他媽的", "他妈的", "靠北", "靠杯", "靠腰", "機掰", "雞掰", "機巴", "雞巴", "鸡巴",
@@ -1060,6 +1073,42 @@ def post_chat():
         db.execute("DELETE FROM chat WHERE ch = ? AND id <= (SELECT id FROM chat WHERE ch = ? ORDER BY id DESC "
                    "LIMIT 1 OFFSET ?)", (ch, ch, CHAT_KEEP))
     return jsonify(ok=True, ch=ch, msg={"id": msg_id, "uid": uid, "name": user["username"], "text": text, "ts": now})
+
+
+# ================= 第六階段：即時連線票券 =================
+def b64url(raw):
+    """URL 安全的 base64（去掉結尾的 =），和 Worker 端的解碼方式相同"""
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def sign_rt_ticket(payload, secret):
+    """票券格式：base64url(JSON 內容) + "." + base64url(HMAC-SHA256(密鑰, 前半段文字))"""
+    body = b64url(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    sig = hmac.new(secret.encode("utf-8"), body.encode("ascii"), hashlib.sha256).digest()
+    return body + "." + b64url(sig)
+
+
+@app.post("/api/rt-ticket")
+def rt_ticket():
+    """發給登入玩家一張短效的即時連線票券。內容：uid、name、lv（雲端存檔等級）、lvmax（顯示等級上限）、
+    job（雲端存檔職業）、iat／exp（Unix 秒）。Worker 只驗證簽章與到期時間，不會再回來查資料庫"""
+    user = current_user()
+    if user is None:
+        return error("請先登入", 401)
+    secret = app.config.get("RT_SECRET") or ""
+    if not secret:
+        return error("即時連線尚未啟用", 503)
+    uid, now = user["id"], now_ts()
+    with live_tx() as db:
+        if not take_token(db, f"t:{uid}", *RT_TICKET_RATE, now_ms()):
+            return error("請求太頻繁，請稍後再試", 429)
+    row = get_db().execute("SELECT level, job FROM saves WHERE user_id = ?", (uid,)).fetchone()
+    lv = row["level"] if row else 1
+    job = row["job"] if row and row["job"] in JOBS and lv >= JOB_MIN_LEVEL[row["job"]] else "novice"
+    exp = now + RT_TICKET_SEC
+    payload = {"v": 1, "uid": uid, "name": user["username"], "lv": lv, "lvmax": presence_level_cap(uid),
+               "job": job, "iat": now, "exp": exp}
+    return jsonify(ticket=sign_rt_ticket(payload, secret), exp=exp, uid=uid, username=user["username"])
 
 
 if __name__ == "__main__":
