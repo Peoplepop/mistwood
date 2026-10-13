@@ -294,7 +294,7 @@ body.touch .chatbar{left:calc(6px + env(safe-area-inset-left));bottom:calc(6px +
   <p class="note">怪物掉落的金幣、藥水與裝備，<b>碰觸即自動拾取</b>。Lv.10 可找村口的雷歐轉職，Lv.30 可再接受二轉試煉。森林最深處的「霧谷遺跡」盡頭有強大的 Boss「霧之守衛」。Lv.30 以上可以從晨霧村的<b>傳送門</b>（靠近後按 ↑）前往北方的「霜月雪原」。</p>
   <p class="note">開啟視窗時遊戲<b>不會暫停</b>（怪物仍會攻擊）；可在設定（O）中改成開視窗時暫停。</p>
   <p class="note">在「帳號」視窗註冊／登入後，進度會自動備份到雲端，並可參加等級、擊殺數、金幣、Boss 排行榜。不登入也能正常遊玩（進度存在這台裝置）。</p>
-  <p class="note"><b>多人同步</b>：登入後會自動進入頻道（每個頻道最多 20 人），可以看到同頻道的其他玩家、聊天和使用表情。沒登入也能觀看其他玩家，但別人看不到你。</p>
+  <p class="note"><b>多人同步</b>：登入後會自動進入頻道（每個頻道最多 20 人），可以看到同頻道的其他玩家、聊天和使用表情。沒登入時看不到其他玩家，別人也看不到你。</p>
   <button class="btn" id="startBtn">開始冒險</button>
   <p class="tip keyOnly">按任意鍵或點擊開始</p>
   <div><button class="link" id="resetBtn">重置進度</button></div>
@@ -329,6 +329,23 @@ function apiConfig(host) {
 }
 const API = apiConfig(location.hostname);   // API.ready = false 時雲端功能停用，只用本機存檔
 const API_BASE = API.base;
+// ================= 第六階段：即時連線（Cloudflare Worker，WebSocket） =================
+// Worker 部署後，把 RT_URL_PROD 填上正式網址（例如 'wss://mistwood-rt.帳號.workers.dev'）就會對所有登入玩家啟用；
+// 空字串 = 不啟用，只用 PythonAnywhere 的 HTTP 輪詢（行為和第五階段相同）。
+// 測試用網址參數：?rt=ws://127.0.0.1:8787（本機 Worker）、?rt=wss://xxx.workers.dev（已部署的 Worker）、?rt=off（強制停用）
+// 從本機開啟遊戲時接受任何 ws:// 或 wss:// 網址；正式網站只接受 wss://*.workers.dev（避免連線票券被送到奇怪的伺服器）
+const RT_URL_PROD = '';
+function rtConfig(host) {
+  const local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+  let url = RT_URL_PROD;
+  try {
+    const q = new URLSearchParams(location.search).get('rt');
+    if (q === 'off') url = '';
+    else if (q && (local ? /^wss?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?\/?$/ : /^wss:\/\/[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.workers\.dev\/?$/).test(q)) url = q;
+  } catch (e) {}
+  return API.ready ? url.replace(/\/+$/, '') : '';
+}
+const RT_URL = rtConfig(location.hostname);
 
 // ================= 設定與資料 =================
 const WORLD_W = 11200, WORLD_H = 760, GROUND_Y = 700, TOWN_X = 190, DEEP_X = 3600;
@@ -4321,10 +4338,15 @@ function cloudInit() {   // 登入資訊在 start() 讀取存檔前就先載入�
   if (cloudOn()) cloudCheck(true);
 }
 // ================= 多人同步（第五階段）：在線狀態、頻道、聊天、表情 =================
-// PythonAnywhere 不支援 WebSocket，所以用 HTTP 輪詢：每次回報自己的狀態，同時拿回同頻道的其他玩家與新聊天（一次來回）。
-// 只有登入雲端帳號的玩家會出現在別人的畫面上；訪客可以觀看（唯讀、不能聊天）。
+// 兩種連線方式（第六階段）：
+//   1. 即時連線（有設定 RT_URL 時優先使用）：向 PythonAnywhere 取得短效票券 → WebSocket 連到 Cloudflare Worker 的頻道，
+//      位置約每秒 10 次（只在有變化時送）、其他玩家與聊天由伺服器即時推送。
+//   2. HTTP 輪詢（PythonAnywhere 不支援 WebSocket）：每次回報自己的狀態，同時拿回同頻道的其他玩家與新聊天（一次來回）。
+//      即時連線連不上時自動改用這個（備援），並在背景每 30 秒重試即時連線。
+// 只有登入雲端帳號的玩家才會進入頻道；訪客看不到其他玩家（第六階段起），也不會發出任何多人連線請求。
 // 連不上時安靜地以指數退避重試，只在狀態改變時提示一次；玩家名稱與聊天內容一律用 textContent 或畫布顯示，不使用 innerHTML。
 const NET_INTERP = 0.5;          // 其他玩家的位置緩衝（秒）：顯示約 0.5 秒前的狀態，兩筆回報之間平滑內插（網路不穩時自動加長到 1 秒）
+const NET_INTERP_RT = 0.25;      // 即時連線時的位置緩衝（回報頻率較高，可以縮短）
 const NET_SNAP = 600;            // 兩筆回報距離超過這個值（例如重生、傳送）就直接瞬移，不內插
 const CHAT_MAX = 60, CHAT_LOG_MAX = 80, BUBBLE_SEC = 4.5, EMOTE_SEC = 3;
 const EMOTES = ['開心', '愛心', '哭哭', '生氣', '驚訝', '音符'];
@@ -4332,8 +4354,9 @@ const EMOTE_KEYS = { Digit3: 0, Digit4: 1, Digit5: 2, Digit6: 3, Digit7: 4, Digi
 const NET_STATES = ['idle', 'walk', 'jump', 'climb', 'prone', 'dead'];
 const NET_ACTS = ['melee', 'stab', 'shot', 'pshot', 'skill', 'heavy', 'spin', 'thrust', 'cast'];
 const NET = {
-  st: '',             // '' 連線中／ok 已連線／offline 連不上（重試中）／unsup 伺服器尚未支援／full 頻道全滿／off 雲端未設定
-  mode: '',           // 'u:帳號' 登入後回報自己的狀態／'g' 訪客觀看
+  st: '',             // '' 連線中／ok 已連線／offline 連不上（重試中）／unsup 伺服器尚未支援／full 頻道全滿／off 雲端未設定／guest 訪客（不連線）／dup 帳號在別處連線
+  mode: '',           // 'u:帳號' 登入後回報自己的狀態／'g' 訪客（看不到其他玩家）
+  transport: '',      // 目前使用的連線方式：'ws' 即時連線／'http' HTTP 輪詢／'' 尚未連上
   ch: 0, want: 0, nch: 10, cap: 20, online: 0, total: 0, chans: [], me: 0,
   others: new Map(),  // 同頻道的其他玩家 id → 遠端玩家
   cursor: 0, joined: false, seen: new Set(), log: [], logT: -1e9, logH: 0,
@@ -4350,19 +4373,24 @@ function netWake() { if (!NET.busy && API.ready) netLater(Math.max(30, NET.lastR
 function netClear() { NET.others.clear(); if (NET.card) { NET.card = 0; renderCard(); } }
 function netReset(mode) {
   NET.mode = mode; netClear();
-  Object.assign(NET, { ch: 0, want: 0, online: 0, total: 0, chans: [], me: 0, cursor: 0, joined: false, st: '', fails: 0, log: [], logT: -1e9, sentSig: '' });
+  rtReset();
+  Object.assign(NET, { ch: 0, want: 0, online: 0, total: 0, chans: [], me: 0, cursor: 0, joined: false, st: '', fails: 0, log: [], logT: -1e9, sentSig: '', transport: '' });
   NET.seen.clear();
   if (G.ui.win === 'social') renderWin();
 }
 // 自己目前的動作狀態（攻擊動作另外用攻擊序號傳送）
 function baseState(p) { return p.dead ? 'dead' : p.rope ? 'climb' : p.prone ? 'prone' : !p.onGround ? 'jump' : Math.abs(p.vx) > 20 ? 'walk' : 'idle'; }
 function netSig(p) { return [Math.round(p.x / 6), Math.round(p.y / 6), p.face, baseState(p), NET.an, NET.en, p.lv, p.job].join(); }
-function netBody() {
-  const p = G.player, eq = {};
+// 自己的狀態（HTTP 回報與即時連線共用的格式）
+function netState(p) {
+  const eq = {};
   for (const k of SLOT_ORDER) if (p.equip[k]) eq[k] = [p.equip[k].b, p.equip[k].r];
   NET.sentSig = netSig(p);
-  return { ch: NET.want || NET.ch, sw: !!NET.want, x: Math.round(p.x), y: Math.round(p.y), f: p.face, st: baseState(p), ak: NET.ak, ad: NET.ad, an: NET.an,
-    job: p.job, lv: p.lv, eq, em: NET.emT > 0 ? NET.em : -1, en: NET.en, after: NET.joined ? NET.cursor : 0 };
+  return { x: Math.round(p.x), y: Math.round(p.y), f: p.face, st: baseState(p), ak: NET.ak, ad: NET.ad, an: NET.an,
+    job: p.job, lv: p.lv, eq, em: NET.emT > 0 ? NET.em : -1, en: NET.en };
+}
+function netBody() {
+  return Object.assign(netState(G.player), { ch: NET.want || NET.ch, sw: !!NET.want, after: NET.joined ? NET.cursor : 0 });
 }
 // 輪詢間隔：附近有其他玩家時 0.4 秒；附近沒人時移動中 1 秒、靜止 2 秒；分頁在背景時 2 秒
 function netInterval() {
@@ -4370,7 +4398,6 @@ function netInterval() {
   if (document.hidden) return 2000;
   let near = false;
   if (SETTINGS.others) for (const R of NET.others.values()) if (Math.abs(R.x - p.x) < VIEW_W && Math.abs(R.y - p.y) < VIEW_H) { near = true; break; }
-  if (NET.mode === 'g') return near ? 500 : 2000;
   return near ? 400 : netNow() - NET.changeAt < 3000 ? 1000 : 2000;
 }
 async function netTick() {
@@ -4381,15 +4408,22 @@ async function netTick() {
   if (!p || (G.hint && !G.introShown)) { netLater(1000); return; }   // 還在開場說明畫面（尚未進入遊戲）
   const mode = cloudOn() ? 'u:' + CLOUD.user.toLowerCase() : 'g';
   if (mode !== NET.mode) netReset(mode);
+  if (mode === 'g') {   // 訪客：不進入頻道、看不到其他玩家，也不發出任何多人連線請求（登入時 netWake 會立刻重新檢查）
+    if (NET.st !== 'guest') { NET.st = 'guest'; netRefreshWin(); }
+    netLater(1000); return;
+  }
+  if (RT_URL && rtTick(p)) return;   // 即時連線負責這一次（已連上，或第一次連線中）
   NET.busy = true; NET.lastReq = netNow();
   let r = null, err = null;
   try {
-    r = mode === 'g' ? await api('GET', `/api/presence?ch=${NET.want || NET.ch}&after=${NET.joined ? NET.cursor : 0}`) : await api('POST', '/api/presence', netBody());
+    r = await api('POST', '/api/presence', netBody());
   } catch (e) { err = e || {}; }
   NET.busy = false;
   if (mode !== (cloudOn() ? 'u:' + CLOUD.user.toLowerCase() : 'g')) { netLater(50); return; }   // 等待回應期間登入／登出了：重新來過
+  if (rtLive()) { netLater(50); return; }   // 等待回應期間即時連線已經連上：丟掉這次 HTTP 的結果
   if (err) { netFail(err); return; }
-  netApply(r, mode === 'g');
+  NET.transport = 'http';
+  netApply(r, false);
   netLater(netInterval());
 }
 function netFail(e) {
@@ -4489,7 +4523,7 @@ function netFrame(dt) {
     if (R.emT > 0) R.emT -= dt;
     if (R.bubT > 0) R.bubT -= dt;
   }
-  NET.delay = starve ? Math.min(1, NET.delay + dt * 0.4) : Math.max(NET_INTERP, NET.delay - dt * 0.02);
+  NET.delay = starve ? Math.min(1, NET.delay + dt * 0.4) : Math.max(NET.transport === 'ws' ? NET_INTERP_RT : NET_INTERP, NET.delay - dt * 0.02);
   // 自己開始移動或出手時，不要等到下一次「慢速」輪詢
   const p = G.player;
   if (p && NET.mode && NET.mode !== 'g' && NET.st === 'ok' && !NET.busy && NET.nextAt - netNow() > 450 && netSig(p) !== NET.sentSig) {
@@ -4502,16 +4536,204 @@ function netTrack(p) {
   NET.lastAtkT = p.atkT;
 }
 // 社群視窗開著時，頻道人數、玩家列表或聊天有變化才重新繪製（避免一直重繪導致按鈕點不到）
-const netWinSig = () => [NET.st, NET.mode, NET.ch, NET.want, NET.online, NET.total, NET.chans.join(), NET.log.length && NET.log[NET.log.length - 1].k,
+const netWinSig = () => [NET.st, NET.mode, NET.transport, NET.ch, NET.want, NET.online, NET.total, NET.chans.join(), NET.log.length && NET.log[NET.log.length - 1].k,
   [...NET.others.values()].map(R => R.id + ':' + R.lv + R.job + R.name + areaOf(R.x)).join()].join('|');
 function netRefreshWin() { if (G.ui.win === 'social' && netWinSig() !== NET.winSig) renderWin(); }
 function netStatusText() {
   if (!API.ready || NET.st === 'off') return '';
+  if (NET.st === 'guest') return '多人連線：登入後可見其他玩家';
+  if (NET.st === 'dup') return '多人連線：帳號在其他地方連線中';
   if (NET.st === 'offline') return '多人連線：離線（重試中）';
   if (NET.st === 'unsup') return '多人連線：伺服器尚未支援';
   if (NET.st === 'full') return '頻道全滿，稍後重試';
   if (NET.st !== 'ok') return '多人連線：連線中…';
   return `頻道 ${NET.ch} · 線上 ${NET.online} 人${NET.mode === 'g' ? '（觀看中）' : ''}`;
+}
+
+// ---- 即時連線（第六階段，WebSocket 連到 Cloudflare Worker） ----
+// 流程：POST /api/rt-ticket 取得票券 → 連 RT_URL/ws?ch=N → 送出 hello（票券＋自己的狀態）→ 收到 welcome 就算進入頻道。
+// 連不上（連續失敗 2 次）就改用 HTTP 輪詢（備援），之後每 30 秒在背景重試；連上後自動換回即時連線。
+// 換頻道時先開新連線，新頻道 welcome 之後才關掉舊連線（新頻道已滿就留在原頻道）。
+const RT_SEND_MS = 100;          // 位置回報最短間隔（每秒最多 10 次，只在有變化時送）
+const RT_TICKET_REUSE = 240000;  // 票券取得後 4 分鐘內可重複使用（伺服器端 5 分鐘到期）
+const RT_PING_MS = 15000, RT_PONG_WAIT = 10000;   // 每 15 秒 ping 一次，10 秒內沒有 pong 就當作斷線
+const RT_RETRY_MS = 30000;       // 改用 HTTP 備援後，多久重試一次即時連線
+const RT = {
+  ws: null, sw: null,            // 目前的連線、換頻道中的新連線（{ ws, ch, sw, live, mode, err, dead }）
+  ticket: '', ticketAt: 0, tkBusy: false,
+  fails: 0, fallback: false, retryAt: 0,
+  sentAt: 0, pingAt: 0, pongAt: 0,
+  q: 0, pend: new Map(),         // 等待回覆的請求（聊天）：編號 → { resolve, reject, timer }
+};
+const rtLive = () => !!(RT.ws && RT.ws.live && RT.ws.mode === NET.mode && RT.ws.ws.readyState === 1);
+function rtCloseSock(S) { if (!S) return; S.dead = true; try { S.ws.close(1000); } catch (e) {} }
+// 登入／登出（換帳號）時：關掉所有連線、清掉票券與重試狀態
+function rtReset() {
+  rtCloseSock(RT.ws); rtCloseSock(RT.sw);
+  for (const P of RT.pend.values()) { clearTimeout(P.timer); P.reject({ offline: true, msg: '連線已中斷' }); }
+  RT.pend.clear();
+  Object.assign(RT, { ws: null, sw: null, ticket: '', ticketAt: 0, fails: 0, fallback: false, retryAt: 0, sentAt: 0 });
+}
+// netTick 呼叫：回傳 true = 這一次由即時連線處理；false = 改用 HTTP 輪詢（備援中）
+function rtTick(p) {
+  const now = netNow();
+  rtEnsure(now);
+  if (rtLive()) {
+    if (NET.want === NET.ch) NET.want = 0;
+    else if (NET.want && !RT.sw) {   // 換頻道：票券還能用就直接開新連線，否則先重新取票券
+      if (RT.ticket && now - RT.ticketAt <= RT_TICKET_REUSE) rtOpen(NET.want, true);
+      else if (!RT.tkBusy) rtFetchTicket();
+    }
+    if (netSig(p) !== NET.sentSig && now - RT.sentAt >= RT_SEND_MS - 5) { RT.sentAt = now; rtSend({ t: 's', ...netState(p) }); }
+    if (now - RT.pingAt > RT_PING_MS) { RT.pingAt = now; rtSend('ping'); }
+    else if (RT.pingAt > RT.pongAt && now - RT.pingAt > RT_PONG_WAIT) { RT.pongAt = now; try { RT.ws.ws.close(); } catch (e) {} }   // 沒有回應：斷線重連
+    netLater(RT_SEND_MS); return true;
+  }
+  if (!RT.fallback) { netLater(150); return true; }   // 第一次連線中：先不要用 HTTP 進入頻道
+  return false;
+}
+function rtSend(obj) { try { RT.ws.ws.send(typeof obj === 'string' ? obj : JSON.stringify(obj)); } catch (e) {} }
+// 需要時開始連線（先確認票券）
+function rtEnsure(now) {
+  if (RT.ws || RT.tkBusy || now < RT.retryAt) return;
+  if (!RT.ticket || now - RT.ticketAt > RT_TICKET_REUSE) { rtFetchTicket(); return; }
+  rtOpen(NET.ch, false);
+}
+async function rtFetchTicket() {
+  const mode = NET.mode;
+  RT.tkBusy = true;
+  try {
+    const r = await api('POST', '/api/rt-ticket');
+    if (mode !== NET.mode) return;
+    if (typeof r.ticket !== 'string' || !r.ticket) throw { msg: '伺服器回應格式錯誤' };
+    RT.ticket = r.ticket; RT.ticketAt = netNow();
+  } catch (e) {
+    if (mode !== NET.mode) return;
+    e = e || {};
+    if (e.status === 401 && CLOUD.token) { cloudFail(e); return; }
+    if (rtLive()) {   // 已連上、只是換頻道要用的新票券拿不到：留在原本的頻道
+      if (NET.want) { NET.want = 0; toast('切換頻道失敗，請稍後再試', '#ffb3a8'); SFX.deny(); netRefreshWin(); }
+      return;
+    }
+    if (e.status === 503 || e.status === 404 || e.status === 405) rtGiveUp(5 * 60000);   // 後端還沒啟用即時連線：安靜地改用 HTTP
+    else if (e.status === 429) RT.retryAt = netNow() + 5000;
+    else rtFailed();
+  } finally { RT.tkBusy = false; }
+}
+function rtGiveUp(ms) { if (!RT.fallback) NET.joined = false; RT.fallback = true; RT.retryAt = netNow() + ms; }
+// 連線失敗（還沒進入頻道就斷了）：連續 2 次就改用 HTTP 備援
+function rtFailed() {
+  RT.fails++;
+  if (RT.fails >= 2 && !RT.fallback) {
+    RT.fallback = true; NET.joined = false;
+    toast('即時連線失敗，改用一般連線（背景自動重試）', '#ffb3a8');
+  }
+  RT.retryAt = netNow() + (RT.fallback ? RT_RETRY_MS : 1000);
+}
+function rtOpen(ch, isSwitch) {
+  let ws;
+  try { ws = new WebSocket(`${RT_URL}/ws?ch=${n0(ch)}${isSwitch ? '' : '&auto=1'}`); } catch (e) { if (!isSwitch) rtFailed(); return; }
+  const S = { ws, ch, sw: isSwitch, live: false, mode: NET.mode, err: null, dead: false };
+  if (isSwitch) RT.sw = S; else RT.ws = S;
+  const timer = setTimeout(() => { if (!S.live) try { ws.close(); } catch (e) {} }, 8000);   // 太久沒有進入頻道
+  ws.onopen = () => { if (G.player) ws.send(JSON.stringify({ t: 'hello', ticket: RT.ticket, s: netState(G.player) })); };
+  ws.onmessage = e => rtMessage(S, e.data);
+  ws.onclose = e => { clearTimeout(timer); rtClosed(S, e.code); };
+}
+function rtMessage(S, data) {
+  if (S.dead || S.mode !== NET.mode) return;
+  if (data === 'pong') { RT.pongAt = netNow(); return; }
+  let m;
+  try { m = JSON.parse(data); } catch (e) { return; }
+  if (!m || typeof m !== 'object') return;
+  if (m.t === 'err') { S.err = m; return; }   // 伺服器接著會關閉連線
+  if (m.t === 'welcome') { rtWelcome(S, m); return; }
+  if (!S.live || RT.ws !== S) return;
+  if (m.t === 'ps') {
+    rtClock(m.now);
+    for (const q of Array.isArray(m.players) ? m.players.slice(0, 60) : []) netPlayer(q);
+    if (NET.card) renderCard();
+    netRefreshWin();
+  } else if (m.t === 'leave') {
+    const id = n0(m.id);
+    NET.others.delete(id);
+    if (NET.card === id) { NET.card = 0; renderCard(); }
+    netRefreshWin();
+  } else if (m.t === 'chat') {
+    chatAdd(m.msg, false); netRefreshWin();
+  } else if (m.t === 'chans') {
+    if (Array.isArray(m.chans)) NET.chans = m.chans.slice(0, NET.nch).map(n0);
+    NET.online = n0(m.online); NET.total = n0(m.total);
+    netRefreshWin();
+  } else if (m.t === 'r') {
+    const q = n0(m.q), P = RT.pend.get(q);
+    if (!P) return;
+    RT.pend.delete(q); clearTimeout(P.timer);
+    if (m.ok) P.resolve(m); else P.reject({ status: 400, msg: netText(m.error, 60) || '傳送失敗' });
+  }
+}
+function rtClock(now) {
+  const off = (+now || netNow()) - netNow();
+  NET.off = NET.off === null || Math.abs(off - NET.off) > 2000 ? off : NET.off + (off - NET.off) * 0.1;
+}
+// 進入頻道（第一次連線、斷線重連、換頻道、從 HTTP 備援換回來）
+function rtWelcome(S, m) {
+  if (S.live) return;
+  S.live = true;
+  if (S.sw) { const old = RT.ws; RT.ws = S; RT.sw = null; rtCloseSock(old); }
+  else if (RT.ws !== S) { rtCloseSock(S); return; }
+  if (NET.transport !== 'ws') { NET.others.clear(); NET.joined = false; NET.cursor = 0; if (NET.card) { NET.card = 0; renderCard(); } }
+  if (RT.fallback) toast('已改用即時連線', '#9ff0c8');
+  RT.fails = 0; RT.fallback = false; RT.retryAt = 0;
+  RT.pingAt = RT.pongAt = netNow(); RT.sentAt = 0;
+  NET.transport = 'ws'; NET.sentSig = '';
+  if (n0(m.ch) !== NET.ch) NET.seen.clear();   // 各頻道的聊天編號各自遞增：換頻道時重新記錄
+  netApply({ ch: m.ch, nch: m.nch, cap: m.cap, online: m.online, total: m.total, chans: m.chans, me: m.me, now: m.now,
+    players: m.players, chat: m.chat, cursor: 0 }, false);
+}
+function rtClosed(S, code) {
+  if (S.dead) return;   // 自己關掉的（換頻道後的舊連線、登出）
+  S.dead = true;
+  if (S.mode !== NET.mode) return;
+  const kind = S.err && S.err.code;
+  if (kind === 'ticket' || code === 4002) RT.ticket = '';
+  if (S === RT.sw) {   // 換頻道失敗：留在原本的頻道
+    RT.sw = null;
+    toast(kind === 'full' ? netText(S.err.msg, 60) : '切換頻道失敗，請稍後再試', '#ffb3a8'); SFX.deny();
+    NET.want = 0; netRefreshWin();
+    return;
+  }
+  if (S !== RT.ws) return;
+  RT.ws = null;
+  for (const P of RT.pend.values()) { clearTimeout(P.timer); P.reject({ offline: true, msg: '連線中斷，訊息可能沒有送出' }); }
+  RT.pend.clear();
+  if (S.live) {   // 原本正常，突然斷線
+    netClear(); NET.transport = '';
+    if (code === 4001 || kind === 'replaced') {
+      NET.st = 'dup'; RT.retryAt = netNow() + 60000;
+      toast('這個帳號已在其他分頁或裝置連線，這裡暫停多人同步', '#ffb3a8');
+    } else {
+      NET.st = ''; RT.fails = 0; RT.retryAt = netNow() + 300;   // 馬上重連
+    }
+    netRefreshWin();
+    return;
+  }
+  if (kind === 'full') {   // 所有頻道都滿了（大廳會挑有空位的頻道，所以只有全滿才會發生）
+    if (NET.st !== 'full') toast('所有頻道都已滿，稍後自動重試', '#ffb3a8');
+    NET.st = 'full'; NET.ch = 0; RT.retryAt = netNow() + 10000; netRefreshWin();
+    return;
+  }
+  rtFailed();
+}
+// 送出請求並等待回覆（目前只有聊天）
+function rtRequest(obj, ms = 6000) {
+  return new Promise((resolve, reject) => {
+    if (!rtLive()) { reject({ offline: true, msg: '尚未連上多人伺服器' }); return; }
+    const q = RT.q = RT.q % 1e9 + 1;
+    const timer = setTimeout(() => { RT.pend.delete(q); reject({ offline: true, msg: '傳送逾時' }); }, ms);
+    RT.pend.set(q, { resolve, reject, timer });
+    rtSend({ ...obj, q });
+  });
 }
 
 // ---- 聊天 ----
@@ -4566,7 +4788,7 @@ async function chatSend() {
   if ([...text].length > CHAT_MAX) { chatHint(`訊息最多 ${CHAT_MAX} 個字`); SFX.deny(); return; }
   NET.sending = true; chatHint('傳送中…', false);
   try {
-    const r = await api('POST', '/api/chat', { text });
+    const r = rtLive() ? await rtRequest({ t: 'chat', text }) : await api('POST', '/api/chat', { text });
     inp.value = ''; chatHint('', false);
     chatAdd(r.msg, false);
     if (!isTouch) closeChat();
@@ -4759,7 +4981,7 @@ function drawNetHud() {
   ctx.save(); ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'right';
   const w = ctx.measureText(t).width + 14, x0 = x1 - w;
   ctx.fillStyle = 'rgba(14,23,20,.72)'; ctx.beginPath(); rr(x0, y, w, 18, 5); ctx.fill();
-  ctx.fillStyle = NET.st === 'ok' ? (NET.mode === 'g' ? '#bfd3c4' : '#9ff0c8') : NET.st === 'offline' || NET.st === 'full' ? '#ffb3a8' : '#d8cfb4';
+  ctx.fillStyle = NET.st === 'ok' ? '#9ff0c8' : NET.st === 'offline' || NET.st === 'full' || NET.st === 'dup' ? '#ffb3a8' : NET.st === 'guest' ? '#bfd3c4' : '#d8cfb4';
   ctx.fillText(t, x1 - 7, y + 13);
   ctx.restore();
   NET.hudRect = [x0, y, w, 18];
@@ -5094,7 +5316,9 @@ const WIN = {
     if (!API.ready) return [CLOUD_NOT_READY, ''];
     const guest = NET.mode === 'g', st = netStatusText() || '多人連線：連線中…';
     let h = `<div class="hd">${esc(st)}${NET.st === 'ok' ? `<span class="dim" style="font-weight:600;font-size:12px">（全部頻道共 ${NET.total} 人）</span>` : ''}</div>`;
-    if (guest) h += '<div class="d dim" style="margin-bottom:6px">訪客模式：可以看到其他玩家與聊天，<b>登入後</b>其他玩家才看得到你，也才能聊天（按 L 登入）。</div>';
+    if (guest) h += '<div class="d dim" style="margin-bottom:6px">訪客模式：<b>登入後才能看到其他玩家</b>、進入頻道與聊天，其他玩家也才看得到你（按 L 登入）。表情仍可使用（只有自己看得到）。</div>';
+    else if (NET.st === 'ok') h += `<div class="d dim" style="margin-bottom:6px">連線方式：${NET.transport === 'ws' ? '即時連線（WebSocket）' : RT_URL ? '一般連線（HTTP 輪詢；即時連線暫時連不上，背景自動重試）' : '一般連線（HTTP 輪詢）'}</div>`;
+    if (NET.st === 'dup') h += '<div class="det dim">這個帳號已在其他分頁或裝置連線，這裡暫停多人同步，約 1 分鐘後自動重新連線。</div>';
     if (NET.st === 'unsup') h += '<div class="det dim">伺服器還沒更新到支援多人同步的版本，遊戲其他功能不受影響。</div>';
     if (NET.st === 'offline') h += '<div class="det dim">暫時連不上多人伺服器，會自動重試；遊戲與存檔不受影響。</div>';
     if (NET.st === 'ok') {
@@ -5123,7 +5347,7 @@ function fillSocial() {
   if (!list || !log) return;
   const mk = (tag, cls, text, parent) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; parent.appendChild(n); return n; };
   const p = G.player, others = [...NET.others.values()].sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x));
-  if (!others.length) mk('div', 'det dim', NET.st === 'ok' ? '這個頻道目前沒有其他玩家。' : '尚未連線。', list);
+  if (!others.length) mk('div', 'det dim', NET.st === 'ok' ? '這個頻道目前沒有其他玩家。' : NET.mode === 'g' ? '登入後才能看到其他玩家。' : '尚未連線。', list);
   for (const R of others) {
     const row = mk('div', 'row', null, list);
     row.dataset.do = 'card'; row.dataset.a = String(R.id);
