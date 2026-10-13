@@ -130,6 +130,16 @@ def test_rejects_absurd_values(client, register, clock):
     assert client.post("/api/presence", data="nope", headers=auth(a)).status_code == 400
 
 
+def test_frost_zone_position_is_accepted(client, register, clock):
+    # 第六階段：霜月雪原在 x = 7400～11200（和森林共用同一個座標系）
+    a, b = register("alice"), register("bob")
+    ok(report(client, a, x=9000))
+    clock.advance(1)
+    assert [p["x"] for p in ok(report(client, b))["players"]] == [9000]
+    clock.advance(1)
+    assert report(client, a, x=app_module.WORLD_W + 51).status_code == 400
+
+
 def test_clamps_and_sanitizes_fields(client, register, clock):
     a, b = register("alice"), register("bob")
     ok(report(client, a, x=-20, y=780, f=5, st="<script>", ak="hack", ad=99, an=-3, job="god", lv=7, em=42, en=-1,

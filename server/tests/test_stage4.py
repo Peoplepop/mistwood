@@ -140,12 +140,12 @@ def test_job_must_match_level(client, register):
 
 def test_level_requires_minimum_kills(client, register):
     assert app_module.min_kills_for_level(20, 0) == 0     # Lv.20 以前不要求擊殺數（任務獎勵、舊存檔）
-    assert app_module.min_kills_for_level(25, 0) == 0     # Lv.20 之後的任務經驗值也扣掉
-    assert app_module.min_kills_for_level(30, 0) == 32
-    assert app_module.min_kills_for_level(30, 1) == 15    # Boss 給的經驗值也算進去
+    assert app_module.min_kills_for_level(30, 0) == 0     # Lv.20 之後的任務經驗值也扣掉（q7～q14 共約 12 萬）
+    assert app_module.min_kills_for_level(40, 0) == 84
+    assert app_module.min_kills_for_level(40, 1) == 79    # Boss 給的經驗值也算進去
     assert ranked_and_reason(client, register("a1"), make_save(lv=20, kills=0, job="mage")) == (True, None)
-    assert ranked_and_reason(client, register("a2"), make_save(lv=30, kills=32, job="mage")) == (True, None)
-    assert ranked_and_reason(client, register("a3"), make_save(lv=30, kills=31, job="mage")) == (False, "等級與擊殺數不符")
+    assert ranked_and_reason(client, register("a2"), make_save(lv=40, kills=84, job="wizard")) == (True, None)
+    assert ranked_and_reason(client, register("a3"), make_save(lv=40, kills=83, job="wizard")) == (False, "等級與擊殺數不符")
     assert ranked_and_reason(client, register("a4"), make_save(lv=200, kills=0)) == (False, "等級與擊殺數不符")
 
 
@@ -227,10 +227,10 @@ def test_level_rate_limit(client, register, clock):
     for token in (slow, quick):
         assert ranked_and_reason(client, token, make_save(lv=20, kills=2000, job="warrior"))[0] is True
     clock.advance(1)
-    # Lv.20 → Lv.35 需要約 13.8 萬經驗值，1 秒內不可能（寬限 3166 × 秒數 ＋ 7 萬）
-    assert ranked_and_reason(client, quick, make_save(lv=35, kills=2000, job="knight")) == (False, "等級提升過快")
+    # Lv.20 → Lv.42 需要約 39.9 萬經驗值，1 秒內不可能（寬限 10166 × 秒數 ＋ 16 萬）
+    assert ranked_and_reason(client, quick, make_save(lv=42, kills=2000, job="knight")) == (False, "等級提升過快")
     clock.advance(29)
-    assert ranked_and_reason(client, slow, make_save(lv=35, kills=2000, job="knight"))[0] is True
+    assert ranked_and_reason(client, slow, make_save(lv=42, kills=2000, job="knight"))[0] is True
 
 
 def test_realistic_level30_player_is_ranked(client, register, clock):
@@ -290,10 +290,10 @@ def test_flagged_save_does_not_advance_high_water(client, register, clock):
 
 
 def test_constants_cover_frontend_values():
-    # 前端（index.html）目前的數值：一般怪最高 420 經驗、Boss 9000 經驗、Lv.20 之後任務共 33,500 經驗
-    assert app_module.MAX_EXP_PER_KILL >= 420
+    # 前端（index.html）目前的數值：一般怪最高 1650 經驗（永凍巨像）、Boss 9000 經驗、Lv.20 之後任務共 119,500 經驗
+    assert app_module.MAX_EXP_PER_KILL >= 1650
     assert app_module.BOSS_EXP_MAX >= 9000
-    assert app_module.QUEST_EXP_ABOVE_FREE >= 2500 + 6000 + 12000 + 10000 + 3000
+    assert app_module.QUEST_EXP_ABOVE_FREE >= 2500 + 6000 + 12000 + 10000 + 3000 + 12000 + 24000 + 50000
     # Boss：5 堆金幣（每堆最多 700）＋ 2 件裝備（最貴 6000 × 0.25 × 傳說 8 倍）
     assert app_module.COINS_PER_BOSS_MAX >= 5 * 700 + 2 * 6000 * 0.25 * 8
 

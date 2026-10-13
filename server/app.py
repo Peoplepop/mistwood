@@ -90,15 +90,15 @@ JOBS = set(JOB_MIN_LEVEL)
 # 經驗值曲線（與前端 index.html 的 EXP_TABLE / expToNext 相同）
 EXP_TABLE = [0, 15, 34, 57, 92, 135, 186, 250, 330, 420, 530, 660, 810, 980, 1170, 1380, 1620, 1890, 2190, 2520, 2900]
 EXP_GROWTH = 1.15
-MAX_EXP_PER_KILL = 600          # 單隻一般怪最多給的經驗值（前端目前最高：亡靈騎士 420）
+MAX_EXP_PER_KILL = 2_000        # 單隻一般怪最多給的經驗值（前端目前最高：霜月雪原的永凍巨像 1,650）
 BOSS_EXP_MAX = 10_000           # 擊敗一次 Boss 最多給的經驗值（前端目前：霧之守衛 9000）
 FREE_EXP_LEVEL = 20             # 升到這個等級所需的經驗值不要求擊殺數
                                 # （前期任務 q1～q6 的獎勵，以及第三階段之前的舊存檔沒有記錄擊殺數）
-QUEST_EXP_ABOVE_FREE = 40_000   # Lv.20 之後任務給的經驗值總和（前端 q7～q11 共 33,500，再加一點寬限）
+QUEST_EXP_ABOVE_FREE = 130_000  # Lv.20 之後任務給的經驗值總和（前端 q7～q14 共 119,500，再加一點寬限）
                                 # ※ 前端新增或調整任務獎勵時，這個數字要跟著更新
 COINS_FREE = 100_000            # 金幣上限 = COINS_FREE + 擊殺數 × COINS_PER_KILL_MAX + Boss 擊殺數 × COINS_PER_BOSS_MAX
-                                # （任務金幣共約 1.8 萬＋任務獎勵裝備賣掉約 1 萬，都在 COINS_FREE 內）
-COINS_PER_KILL_MAX = 2_000      # 平均每隻怪：金幣最多 170 ＋ 掉落裝備賣出的期望值約 220（單件最高 6,000）
+                                # （任務金幣共約 3.5 萬＋任務獎勵裝備賣掉約 2.5 萬，都在 COINS_FREE 內）
+COINS_PER_KILL_MAX = 2_000      # 平均每隻怪：金幣最多 330 ＋ 掉落裝備賣出的期望值約 500（單件最高 9,500）
 COINS_PER_BOSS_MAX = 50_000     # 每次 Boss：金幣 5 × 700 ＋ 2 件裝備（傳說最高賣 12,000）＝ 最多約 27,500
 # 進度速度：和「最高合理進度」（high-water mark，見 put_save）比較，用伺服器時間計算
 KILLS_PER_SEC_MAX = 5           # 每秒最多擊殺數
@@ -121,7 +121,7 @@ CHANNEL_CAP = 20                # 每個頻道最多幾人
 ONLINE_TIMEOUT_MS = 10_000      # 超過 10 秒沒有回報就視為離線
 PRESENCE_RATE = (5, 5.0)        # 在線回報的令牌桶（每個帳號）：最多連續 5 次，每秒補 5 次 → 超過回 429
 GUEST_RATE = (6, 3.0)           # 訪客觀看的令牌桶（每個 IP）
-WORLD_W, WORLD_H = 7400, 760    # 地圖大小（與前端 index.html 的 WORLD_W / WORLD_H 相同）
+WORLD_W, WORLD_H = 11200, 760   # 地圖大小（與前端 index.html 的 WORLD_W / WORLD_H 相同；x ≥ 7400 是霜月雪原）
 PRESENCE_LV_SLACK = 5           # 顯示的等級最多比雲端存檔高幾級（存檔每 30 秒才上傳一次）
 NO_SAVE_LV_MAX = 10             # 還沒有雲端存檔的帳號，顯示的等級上限
 HERO_STATES = {"idle", "walk", "jump", "climb", "prone", "dead"}
