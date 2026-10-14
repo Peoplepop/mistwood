@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --port 8787",
-    "deploy": "wrangler deploy",
+    "deploy": "npm run gen -- --check && wrangler deploy",
+    "gen": "node scripts/gen-mobs.mjs",
     "test": "node --test test/*.test.js"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 # 晨霧森林 即時連線伺服器（Cloudflare Worker + Durable Objects）
 
-第六階段的即時連線：玩家位置、動作、表情與頻道聊天改走 WebSocket（6-1），之後會加上伺服器權威的怪物同步（6-2）。
+第六階段的即時連線：玩家位置、動作、表情與頻道聊天改走 WebSocket（6-1），以及伺服器權威的一般怪物同步（6-2）。
 帳號、雲端存檔、排行榜仍在 PythonAnywhere，不受影響。
 
 ```
@@ -10,13 +10,25 @@
 ```
 
 - `src/index.js`：入口（檢查來源網站 Origin、挑頻道、轉給頻道物件）
-- `src/channel.js`：頻道（WebSocket Hibernation API、位置廣播、聊天；怪物 tick 的預留位置）
+- `src/channel.js`：頻道（WebSocket Hibernation API、位置廣播、聊天、怪物 10 Hz tick 與命中訊息）
+- `src/mobworld.js`：伺服器權威的一般怪物（模擬、命中檢查、傷害上限、經驗分配、興趣範圍快照；不依賴 Cloudflare，可直接測試）
+- `src/mobs.gen.js`：**自動產生**，從 `../index.html` 的 `// <mobsim>` 區塊抽出的怪物資料與 AI（`npm run gen`；不要手改）
 - `src/lobby.js`：大廳（各頻道人數、幫剛上線的玩家挑有空位的頻道）
 - `src/ticket.js`：驗證 PythonAnywhere 簽發的票券
 - `src/chat.js`、`src/state.js`：聊天過濾、狀態檢查（規則和 `server/app.py` 相同）
 
-前端在 Worker 正式上線前**預設不使用**即時連線（`index.html` 的 `RT_URL_PROD` 是空字串），
-登入玩家照舊使用 PythonAnywhere 的 HTTP 輪詢；即時連線連不上時也會自動退回 HTTP 輪詢。
+前端的 `RT_URL_PROD` 已設為正式 Worker；即時連線連不上時自動退回 HTTP 輪詢（此時怪物也改回本機單機模擬）。
+怪物同步只有在 Worker 的 welcome 宣告 `mobs: 1` 而且怪物資料指紋（`msig`）和前端相同時才會啟用，
+所以前端可以比 Worker 先上線：舊版 Worker、或 `<mobsim>` 區塊改了但 Worker 還沒重新部署時，前端都會安靜地使用本機怪物。
+
+### 修改怪物資料／AI 之後
+
+```bash
+cd worker
+npm run gen        # 重新產生 src/mobs.gen.js（要 commit）
+npm test           # 會檢查 mobs.gen.js 是否和 index.html 一致
+npx wrangler deploy
+```
 
 ---
 
@@ -29,7 +41,7 @@ cd worker
 npm install
 cp .dev.vars.example .dev.vars      # 把 RT_SECRET 改成一長串隨機字串（.dev.vars 不會進 git）
 npx wrangler dev                    # http://127.0.0.1:8787 ，打開看到 {"ok":true,...} 就是成功
-npm test                            # 單元測試（票券、聊天過濾、狀態檢查、來源網站）
+npm test                            # 單元測試（票券、聊天過濾、狀態檢查、來源網站、怪物同步）
 ```
 
 後端也要用**同一個密鑰**啟動（在 repo 根目錄）：
@@ -133,6 +145,9 @@ npx wrangler deploy
 ### 用量與費用（免費方案）
 
 - Workers 免費方案：每天 10 萬次請求；Durable Objects（SQLite）免費方案有每日請求數與執行時間額度。
-- 每位玩家連線時只算一次 Worker 請求；WebSocket 訊息以 20:1 換算成 Durable Object 請求，
+- 每位玩家連線時只算一次 Worker 請求；**收到的** WebSocket 訊息以 20:1 換算成 Durable Object 請求（伺服器送出的怪物快照不算請求），
   使用 Hibernation API，沒人說話、沒人移動時物件會休眠不計時間。
+- 6-2 之後：有活躍玩家的頻道會以 10 Hz 模擬怪物，期間物件保持清醒（計 Duration：128 MB × 秒數）；
+  所有人掛機超過 2 分鐘或離開後 5 秒停止。估計每位玩家每小時約 1,500～2,000 個 DO 請求（位置回報＋命中），
+  每個「有人在打怪的頻道」每小時約 460 GB-s；免費額度（每天 10 萬請求、13,000 GB-s）大約夠每天 50 玩家小時、28 頻道小時。
 - 用量可在 Cloudflare 後台 **Workers 和 Pages → mistwood-rt → 指標** 查看；`npx wrangler tail` 可以即時看 log。

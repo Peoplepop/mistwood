@@ -1,5 +1,6 @@
 // 頻道（每個頻道一個 Durable Object，idFromName('ch-N')，N = 1～10）
-// 6-1：玩家位置／動作／表情廣播、頻道聊天。6-2 起會在這裡加上伺服器權威的怪物（見下方「怪物（6-2 預留）」）。
+// 6-1：玩家位置／動作／表情廣播、頻道聊天。
+// 6-2：伺服器權威的一般怪物（見下方「怪物」與 mobworld.js）：有活躍玩家時 10 Hz 模擬，沒人時停止、休眠。
 //
 // 使用 WebSocket Hibernation API（ctx.acceptWebSocket）：一段時間沒有訊息時物件會休眠、不計費，
 // 連線不會中斷；醒來時建構子會依每條連線的 attachment 重建玩家清單。
@@ -9,8 +10,12 @@
 //     {t:'hello', ticket, s:{狀態}}       連上後第一則：票券＋自己的狀態
 //     {t:'s', x, y, f, st, ak, ad, an, job, lv, eq, em, en}   狀態有變化時回報（每秒最多約 10 次）
 //     {t:'chat', q, text}                 聊天（q = 前端自訂的請求編號，回覆時帶回）
+//     {t:'h', h:[[怪物 id, 傷害, 方向, 爆擊?1:0, 緩速秒數?], ...]}   打中伺服器的怪物（6-2）
 //   伺服器 → 前端
-//     {t:'welcome', ch, nch, cap, me, name, lv, online, total, chans, players, chat, now}
+//     {t:'welcome', ch, nch, cap, me, name, lv, online, total, chans, players, chat, now, mobs, msig}
+//                                         mobs = 怪物同步的協定版本（0 = 不支援，前端用本機怪物）、msig = 怪物資料指紋
+//     {t:'m', n, u, g?, e?}               怪物快照（只送有變化、左右約 1500 內的怪；格式見 mobworld.js／index.html 的 MN）
+//     {t:'k', id, x, l}                   擊殺結算：只送給有出力的人，x = 分到的經驗值，l = 1 代表最後一擊
 //     {t:'ps', now, players}              有變化的玩家（格式同 HTTP 版 /api/presence 的 players）
 //     {t:'leave', id}                     玩家離開頻道
 //     {t:'chat', msg:{id, uid, name, text, ts}}
@@ -25,10 +30,14 @@ import {
 import { verifyTicket } from './ticket.js';
 import { parseState } from './state.js';
 import { prepareChat, CHAT_GAP_MS, CHAT_BURST, CHAT_BURST_WINDOW_MS } from './chat.js';
+import { MobWorld, MOB_PROTO, MOB_SIG, ACTIVE_MS, maxHit } from './mobworld.js';
 
-// ---- 怪物（6-2 預留） ----
-const MOB_SYNC = false;        // 6-2 實作伺服器權威怪物後改成 true
-const TICK_MS = 100;           // 怪物模擬的間隔（10 Hz）
+// ---- 怪物（6-2） ----
+const MOB_SYNC = true;         // false = 不提供伺服器怪物（welcome 的 mobs = 0，前端照舊用本機怪物）
+const TICK_MS = 100;           // 怪物模擬與快照的間隔（10 Hz）
+const IDLE_STOP_MS = 5000;     // 沒有活躍玩家（附近沒有需要模擬的怪）超過這個時間就停止 tick，讓物件可以休眠
+const HIT_RATE = [48, 24];     // 命中的令牌桶（每位玩家）：最多連續 48 次，每秒補 24 次（超過的命中直接丟掉）
+const HITS_PER_MSG = 24;       // 一則訊息最多幾次命中
 
 const send = (ws, obj) => { try { ws.send(typeof obj === 'string' ? obj : JSON.stringify(obj)); } catch (e) { /* 連線已關閉 */ } };
 
@@ -43,21 +52,24 @@ export class Channel extends DurableObject {
     this.lastId = 0;             // 聊天訊息編號（每個頻道遞增；用毫秒時間當起點，頻道之間幾乎不會重複）
     this.chans = [];             // 大廳回報的各頻道人數
     this.chansSent = '';         // 上一次廣播給玩家的頻道人數（有變化才再廣播）
-    // 6-2 預留：怪物狀態與 tick
-    this.mobs = new Map();       // 怪物 id → { kind, x, y, hp, ... }
+    // 6-2：怪物（第一次需要時才建立；休眠前把狀態存到 storage，醒來時接著用）
+    this.world = null;
+    this.mobSave = null;
     this.tickTimer = null;
     this.lastTick = 0;
+    this.idleMs = 0;
 
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     ctx.blockConcurrencyWhile(async () => {
       this.ch = (await ctx.storage.get('ch')) || 0;
       this.chat = (await ctx.storage.get('chat')) || [];
       this.lastId = (await ctx.storage.get('lastId')) || 0;
+      this.mobSave = (await ctx.storage.get('mobs')) || null;
     });
     // 從休眠醒來：依每條連線的 attachment 重建玩家清單
     for (const ws of ctx.getWebSockets()) {
       const a = ws.deserializeAttachment();
-      if (a && a.uid) this.players.set(a.uid, { ...a, ws, chatTs: [], tok: STATE_RATE[0], tokMs: Date.now() });
+      if (a && a.uid) this.players.set(a.uid, { ...a, ws, chatTs: [], tok: STATE_RATE[0], tokMs: Date.now(), ...this.mobFields() });
     }
   }
 
@@ -87,6 +99,7 @@ export class Channel extends DurableObject {
     const P = this.players.get(a.uid);
     if (!P || P.ws !== ws) { this.reject(ws, CLOSE.REPLACED, 'replaced', '這個帳號已在其他地方連線'); return; }
     if (d.t === 's') this.onState(P, d);
+    else if (d.t === 'h') this.onHits(P, d);
     else if (d.t === 'chat') this.onChat(P, d);
   }
 
@@ -132,7 +145,7 @@ export class Channel extends DurableObject {
     }
     const now = Date.now();
     const P = { ws, uid: tk.uid, name: tk.name, lvmax: tk.lvmax, s, emMs: s.em >= 0 ? now : 0, ts: now,
-      chatTs: [], tok: STATE_RATE[0], tokMs: now };
+      chatTs: [], tok: STATE_RATE[0], tokMs: now, ...this.mobFields() };
     this.players.set(P.uid, P);
     this.persist(P);
     const others = [];
@@ -142,6 +155,7 @@ export class Channel extends DurableObject {
       t: 'welcome', ch: this.ch, nch: NCH, cap: CAP, me: P.uid, name: P.name, lv: s.lv,
       online: this.players.size, total: this.total(), chans: this.chanList(),
       players: others, chat: this.recentChat(now), now: Date.now(),
+      mobs: MOB_SYNC ? MOB_PROTO : 0, msig: MOB_SYNC ? MOB_SIG : '',
     });
     this.broadcastChans(P);  // 其他玩家：頻道人數 +1
     this.markDirty(P.uid);   // 其他玩家會在下一次廣播看到新玩家
@@ -161,6 +175,7 @@ export class Channel extends DurableObject {
     P.s = s; P.ts = now;
     this.persist(P);
     this.markDirty(P.uid);
+    this.startTick();   // 有人在動：怪物要開始（繼續）模擬
   }
 
   /** 休眠前需要保留的資料放在連線的 attachment（上限 2KB） */
@@ -265,23 +280,75 @@ export class Channel extends DurableObject {
     if (this.ctx.getWebSockets().length) await this.ctx.storage.setAlarm(Date.now() + LOBBY_REPORT_MS);
   }
 
-  // ---------- 怪物（6-2 預留） ----------
-  // 6-2 規劃：第一位玩家加入時開始 tick（TICK_MS），只模擬有玩家所在區域的怪；最後一位離開時停止，讓物件可以休眠。
-  // 每次 tick：更新怪物 AI／重生 → 依每位玩家左右約 1500px 的興趣範圍送出怪物快照 {t:'mobs', ...}。
-  // 命中訊息 {t:'hit', ...} 會在 webSocketMessage 加一個分支，依票券的等級／職業檢查傷害上限。
+  // ---------- 怪物（6-2） ----------
+  // 有活躍玩家時每 TICK_MS 模擬一次：只模擬活躍玩家附近的怪，然後依每位玩家左右約 1500px 的範圍送出有變化的怪物。
+  // 沒有活躍玩家超過 IDLE_STOP_MS（或最後一位離開）就停止 tick 並保存怪物狀態，讓物件可以休眠；有人動了再繼續。
+  mobFields() {
+    return { mv: { mk: new Map() }, htok: HIT_RATE[0], htMs: Date.now() };
+  }
+
+  ensureWorld() {
+    if (!this.world) {
+      this.world = new MobWorld();
+      if (this.mobSave) this.world.load(this.mobSave);
+      this.mobSave = null;
+    }
+    return this.world;
+  }
+
   startTick() {
-    if (!MOB_SYNC || this.tickTimer) return;
-    this.lastTick = Date.now();
+    if (!MOB_SYNC || this.tickTimer || !this.players.size) return;
+    this.ensureWorld();
+    this.lastTick = Date.now(); this.idleMs = 0;
     this.tickTimer = setInterval(() => this.tick(), TICK_MS);
   }
 
   stopTick() {
-    if (this.tickTimer) { clearInterval(this.tickTimer); this.tickTimer = null; }
+    if (!this.tickTimer) return;
+    clearInterval(this.tickTimer); this.tickTimer = null;
+    if (this.world) this.ctx.storage.put('mobs', this.world.dump()).catch(() => {});
+  }
+
+  mobPlayers(now) {
+    const list = [];
+    for (const P of this.players.values()) {
+      list.push({ uid: P.uid, x: P.s.x, y: P.s.y, dead: P.s.st === 'dead', active: now - P.ts < ACTIVE_MS });
+    }
+    return list;
   }
 
   tick() {
-    const now = Date.now(), dt = Math.min(0.5, (now - this.lastTick) / 1000);
+    const now = Date.now(), dt = Math.min(0.25, Math.max(0, (now - this.lastTick) / 1000));
     this.lastTick = now;
-    void dt;   // 6-2：在這裡更新 this.mobs 並廣播快照
+    const W = this.ensureWorld();
+    const n = W.step(dt, this.mobPlayers(now), now);
+    for (const P of this.players.values()) {
+      const msg = W.view(P.mv, P.s.x, now);
+      if (msg) send(P.ws, msg);
+    }
+    W.events = [];
+    this.idleMs = n > 0 ? 0 : this.idleMs + dt * 1000;
+    if (this.idleMs > IDLE_STOP_MS || !this.players.size) this.stopTick();
+  }
+
+  /** 打中怪物：檢查（怪還活著、距離、傷害上限、出手頻率）後扣血；打死時把經驗值分給每位有出力的人 */
+  onHits(P, d) {
+    if (!MOB_SYNC || !Array.isArray(d.h)) return;
+    const now = Date.now(), W = this.ensureWorld();
+    this.startTick();
+    P.htok = Math.min(HIT_RATE[0], P.htok + (now - P.htMs) / 1000 * HIT_RATE[1]);
+    P.htMs = now;
+    const pl = { uid: P.uid, x: P.s.x, y: P.s.y, dead: P.s.st === 'dead' };
+    const cap = maxHit(P.s.lv, P.s.job);
+    for (const h of d.h.slice(0, HITS_PER_MSG)) {
+      if (P.htok < 1) break;   // 太頻繁：之後的命中丟掉
+      P.htok -= 1;
+      const r = W.hit(pl, h, cap, now);
+      if (!r.kill) continue;
+      for (const [uid, x] of r.kill.exp) {
+        const Q = this.players.get(uid);
+        if (Q) send(Q.ws, { t: 'k', id: r.kill.id, x, l: uid === r.kill.last ? 1 : 0 });
+      }
+    }
   }
 }
