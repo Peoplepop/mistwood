@@ -29,7 +29,7 @@
 |---|---|---|
 | 6-0 準備 | `worker/` 專案骨架（wrangler）、PA 新增 `POST /api/rt-ticket`、本機 `wrangler dev` 連線打通 | 註冊 Cloudflare、`npx wrangler login` |
 | 6-1 連線層 | 玩家位置與聊天改走 WebSocket，保留 HTTP 備援；訪客不再看到其他玩家 | PA `git pull` + Reload；部署 Worker |
-| 6-2 一般怪同步 | 伺服器權威怪物、命中驗證、擊殺結算（經驗依傷害比例、個人掉寶、任務計數） | 部署、一起實測（2026-10-14 本機完成，待部署） |
+| 6-2 一般怪同步 | 伺服器權威怪物、命中驗證、擊殺結算（經驗依傷害比例、個人掉寶、任務計數） | 部署、一起實測（2026-10-14 已部署，待一起實測） |
 | 6-3 Boss 同步 | 霧之守衛 AI 搬到伺服器、全頻道共鬥、HP 依人數加成 | 部署 |
 
 ## 進度
@@ -39,7 +39,7 @@
   - PA 後端：`POST /api/rt-ticket`（HMAC-SHA256，5 分鐘，內容 uid／name／lv／lvmax／job／iat／exp；未設定 `MISTWOOD_RT_SECRET` 回 503）＋ pytest。
   - 前端：登入玩家優先走 WebSocket，連不上自動退回 HTTP 輪詢；訪客不再看到其他玩家、不再輪詢；`RT_URL_PROD` 已設為 `wss://mistwood-rt.b98010327.workers.dev`（2026-10-13 部署並經使用者雙帳號實測通過）。
   - 已部署：Worker `mistwood-rt.b98010327.workers.dev`、PA 已設 `MISTWOOD_RT_SECRET`（密鑰本機備份在 repo 外 `D:\claude\小k\mistwood_rt_secret.txt`）。
-- **2026-10-14 完成 6-2 一般怪同步（本機驗證通過，Worker 尚未部署）**
+- **2026-10-14 完成 6-2 一般怪同步（本機驗證通過，2026-10-14 已部署 Worker）**
   - 共用程式碼：`index.html` 裡標記 `// <mobsim>` … `// </mobsim>` 的區塊（世界常數、`MONSTERS`／`PLATFORMS`／`SPAWNS`、`makeMonster`、`mobStep`／`monsterAct`／`updateFlyer` 等 AI）由 `worker/scripts/gen-mobs.mjs`（`npm run gen`）抽成 `worker/src/mobs.gen.js`；`npm test` 會檢查是否已更新。AI 的特效／音效改成 `fx(m, 種類, 目標)` 回呼，單機版播特效，伺服器改成事件送給前端。
   - Worker：`src/mobworld.js`（可單獨測試）＋ `Channel` 的 10 Hz tick。只模擬「活躍玩家」（2 分鐘內有動作）左右 1700 內的怪；沒有活躍玩家 5 秒後停止 tick、把怪物狀態存進 storage，讓物件休眠。每位玩家只收左右 1500 內、同一張地圖、**有變化**的怪（整數座標＋旗標）。
   - 命中 `{t:'h'}`：伺服器檢查怪物存在且活著（剛重生淡入中不能打）、玩家沒死、同一張地圖且距離 900／450 內、傷害上限（依狀態中的等級／職業，`maxHit`，約為實際上限的 2 倍）、令牌桶 48 次／每秒補 24 次。
