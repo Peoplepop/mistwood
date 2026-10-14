@@ -348,6 +348,10 @@ function rtConfig(host) {
 const RT_URL = rtConfig(location.hostname);
 
 // ================= 設定與資料 =================
+// 標記 <mobsim> … </mobsim> 的區塊是「怪物資料與 AI」，第六階段的即時連線伺服器（worker/）會原封不動抽出來使用：
+//   在 worker 資料夾執行 npm run gen 產生 worker/src/mobs.gen.js（npm test 會檢查是否已更新）。
+//   這些區塊內只能使用區塊內定義的東西（不能用 G、SFX、畫面、DOM），改完記得重新產生並部署 Worker。
+// <mobsim>
 const WORLD_W = 11200, WORLD_H = 760, GROUND_Y = 700, TOWN_X = 190, DEEP_X = 3600;
 const RUIN_X = 4850, ARENA_X = 6700;   // 霧谷遺跡起點、Boss 祭壇（霧之守衛）起點
 // 第六階段：霜月雪原（x ≥ FROST_X）是另一張地圖，和原本的森林（x < FROST_X）之間有牆隔開，只能用傳送門往返
@@ -356,10 +360,11 @@ const FROST_X = 7400, ICE_X = 9300;    // 霜月雪原起點（＝原本的地�
 const zoneL = x => x >= FROST_X ? FROST_X : 0;           // 所在地圖的左邊界
 const zoneR = x => x >= FROST_X ? WORLD_W : FROST_X;     // 所在地圖的右邊界
 const STEP = 1 / 120, GRAV = 2200;
+const PHYS = { walk: 200, accel: 1900, airAccel: 900, jump: 760, climb: 140, maxFall: 1100 };
+// </mobsim>
 const PLAYER_NAME = '阿嵐';
 const PLAYER_BASE = { hp: 50, mp: 30, atk: 12, def: 0 };
 const PLAYER_GROWTH = { hp: 14, mp: 7, atk: 3, def: 0.6 };   // 新手每級成長
-const PHYS = { walk: 200, accel: 1900, airAccel: 900, jump: 760, climb: 140, maxFall: 1100 };
 const ATTACK = { hitFrom: 0.07, hitTo: 0.2, stabRange: 66, crit: 0.15, critMul: 1.75 };
 const POTION = { hp: { heal: 60, name: '紅色藥水', price: 25 }, mp: { heal: 40, name: '藍色藥水', price: 30 }, cd: 0.5 };
 // 升到下一級所需經驗（索引 = 目前等級）
@@ -531,6 +536,7 @@ const ETC = {
 const SHOP_LIST = ['pot:hp', 'pot:mp', 'wsword', 'cap', 'shirt', 'sandal', 'leather', 'boots', 'isword', 'hbow', 'ostaff', 'bsword', 'rbow', 'rstaff', 'rboots'];
 // Boss 掉落池（必定掉落罕見以上，有機率掉落傳說）
 const BOSS_LOOT = ['gsword', 'wbow', 'mstaff', 'plate', 'hcoat', 'wrobe', 'khelm', 'hhood', 'what', 'mistamu'];
+// <mobsim>
 const MONSTERS = {
   moss:   { name: '綠苔蝸', lv: 1, hp: 28,  atk: 6,  def: 0, exp: 5,  speed: 28, w: 36, h: 28, ai: 'wander', coins: [2, 6],   drops: { hp: 0.06, mp: 0.04 }, respawn: 6,
             parts: ['#a6dc6e', '#6f9f40'], equip: [0.05, ['wsword', 'cap', 'shirt', 'sandal']] },
@@ -620,7 +626,8 @@ const SPAWNS = [
   ['yeti', 9500, 0], ['icegolem', 9900, 0], ['yeti', 10300, 0], ['icegolem', 10700, 0], ['icebat', 9350, 0], ['icebat', 10950, 0],
   ['yeti', 9620, 29], ['icegolem', 10250, 30], ['icebat', 9850, 31], ['icebat', 10050, 31], ['yeti', 10560, 32],
   ['icegolem', 10120, 33], ['icebat', 10250, 33], ['icebat', 10800, 34],
-].map(([type, x, plat]) => ({ type, x, plat }));
+].map(([type, x, plat], id) => ({ id, type, x, plat }));   // id = 出生點編號（即時連線時前端與伺服器用它對應同一隻怪）
+// </mobsim>
 // 城鎮 NPC
 const NPCS = [
   { id: 'gran', name: '商人 葛蘭', x: 64, shop: true },
@@ -700,17 +707,19 @@ const FONT = '"Noto Sans TC","PingFang TC","Microsoft JhengHei","Heiti TC",sans-
 const OUT = '#2b1d17';
 
 // ================= 工具 =================
+// <mobsim>
 const rand = (a, b) => a + Math.random() * (b - a);
 const randi = (a, b) => Math.floor(rand(a, b + 1));
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, t) => a + (b - a) * t;
 const approach = (v, t, d) => v < t ? Math.min(v + d, t) : Math.max(v - d, t);
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+// </mobsim>
 const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 const expToNext = lv => EXP_TABLE[lv] ?? Math.round(EXP_TABLE[EXP_TABLE.length - 1] * Math.pow(1.15, lv - EXP_TABLE.length + 1));
 const reduceMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const $ = id => document.getElementById(id);
 const pct = m => Math.round(m * 100) + '%';
-const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 const cv = $('game');
@@ -1032,43 +1041,14 @@ function makePlayer(d) {
   if (p.hp <= 0) { p.hp = Math.ceil(p.maxHp / 2); p.x = TOWN_X; p.y = GROUND_Y; }
   return p;
 }
-function makeMonster(sp) {
-  const d = MONSTERS[sp.type], plat = PLATFORMS[sp.plat];
-  let minX, maxX;
-  if (d.boss) { minX = ARENA_X + 70; maxX = FROST_X - 70; }   // Boss 只在祭壇內活動
-  else if (d.ai === 'fly') { minX = Math.max(zoneL(sp.x) + 320, sp.x - 480); maxX = Math.min(zoneR(sp.x) - 40, sp.x + 480); }   // 飛行怪：不受平台限制，在出生點左右各 480 內活動
-  else if (plat.ground) {
-    if (sp.x >= FROST_X) { minX = Math.max(FROST_X + 420, sp.x - 230); maxX = Math.min(WORLD_W - 90, sp.x + 230); }   // 雪原：避開傳送門與嚮導
-    else { minX = Math.max(480, sp.x - 230); maxX = Math.min(sp.x < ARENA_X ? ARENA_X - 40 : FROST_X - 30, sp.x + 230); }
-  }
-  else { minX = plat.x + d.w / 2 + 2; maxX = plat.x + plat.w - d.w / 2 - 2; }
-  return {
-    sp, type: sp.type, d, x: sp.x, y: d.ai === 'fly' ? plat.y - FLY_H : plat.y, vx: 0, vy: 0, face: Math.random() < 0.5 ? -1 : 1, hp: d.hp,
-    minX, maxX, onGround: d.ai !== 'fly', state: 'walk', t: rand(0.5, 3), flash: 0, stun: 0, barT: 0, aggro: 0, chasing: false,
-    dead: false, dying: 0, dyMax: 0.6, respawnT: 0, spawnFx: 0.6, anim: Math.random() * 10, squash: 0, lastSwing: -1, stack: 0, stackT: 0,
-    chill: 0, boss: null, act: null, skCD: rand(1, 2.5), fly: null,
-  };
-}
 function respawnMonster(m) {
-  const plat = PLATFORMS[m.sp.plat];
-  Object.assign(m, { x: m.sp.x, y: plat.y, vx: 0, vy: 0, hp: m.d.hp, dead: false, dying: 0, onGround: true, spawnFx: 0.6, flash: 0, stun: 0, barT: 0, aggro: 0, state: 'idle', t: 1, chill: 0, boss: null,
-    act: null, skCD: rand(1, 2.5), fly: null });
-  if (m.d.ai === 'fly') { m.y = flyHome(m); m.onGround = false; }
+  resetMonster(m);
   burst(m.x, m.y - m.d.h / 2, m.d.boss ? 40 : 10, ['#fff7d6', '#bde8c8'], m.d.boss ? 260 : 120, 'dot');
   if (m.d.boss && G.player && G.player.x > RUIN_X && G.player.x < FROST_X) { toast(`${m.d.name}再次出現在祭壇了！`, '#ff9a8e'); SFX.roar(); }
 }
 
 // ================= 物理 =================
-function landOn(b, prevY, ignore) {
-  if (b.vy < 0) return null;
-  let best = null;
-  for (const p of PLATFORMS) {
-    if (p === ignore) continue;
-    if (b.x < p.x - 3 || b.x > p.x + p.w + 3) continue;
-    if (prevY <= p.y + 0.5 && b.y >= p.y && (!best || p.y < best.y)) best = p;
-  }
-  return best;
-}
+// landOn（落到平台上）在下方「怪物 AI」的共用區塊
 function findRope(p, dirUp) {
   for (const r of ROPES) {
     if (Math.abs(p.x - r.x) > 14) continue;
@@ -1098,20 +1078,20 @@ function toast(text, color = '#f1ead8') {
 function addShake(v) { if (!reduceMotion) G.shake = Math.max(G.shake, v); }
 
 // ================= 戰鬥 =================
-function hitMonster(m, mult, dirX) {
+// 可以被打到的怪物（即時連線時：還沒收到伺服器資料、或自己預測已經打死的怪不算）
+const mobHittable = m => !m.dead && m.spawnFx <= 0 && !m.hide && !(m.pend > 0);
+// chill > 0：使其緩速 chill 秒（暴風雪）
+function hitMonster(m, mult, dirX, chill = 0) {
   const p = G.player;
-  if (m.dead) return;
+  if (m.dead || m.pend > 0) return;
   let dmg = p.atk * rand(0.85, 1.15) * mult;
   const crit = Math.random() < p.crit;
   if (crit) dmg *= ATTACK.critMul;
   dmg = Math.max(1, Math.round(dmg - m.d.def));
-  m.hp -= dmg; m.flash = 0.12; m.barT = 5; m.aggro = 6;
-  const heavy = !!m.d.heavy;
-  if (!m.d.boss) {   // Boss 不會被擊退或硬直
-    m.vx = dirX * (heavy ? (crit ? 120 : 50) : (crit ? 260 : 170));
-    m.stun = heavy ? 0.12 : 0.28;
-    if (heavy) m.face = -dirX;
-  }
+  m.hp -= dmg; m.flash = 0.12; m.barT = 5;
+  const net = mnOwns(m);
+  if (net) mnHit(m, dmg, dirX, crit, chill);   // 伺服器的怪物：送出命中，擊退與死亡由伺服器決定（傷害數字照樣立刻顯示）
+  else mobKnock(m, dirX, crit, 0);
   if (m.stackT <= 0) m.stack = 0;
   const yy = m.y - m.d.h - 14 - m.stack * 24;
   m.stack++; m.stackT = 0.45;
@@ -1121,21 +1101,31 @@ function hitMonster(m, mult, dirX) {
   burst(hx, hy, crit ? 16 : 9, crit ? ['#fff', '#ffd23e', '#ff7a3c'] : ['#fff', '#ffe9a8'], crit ? 360 : 240);
   G.parts.push({ x: hx, y: hy, vx: 0, vy: 0, t: 0, life: 0.18, color: '#fff', size: crit ? 26 : 18, type: 'ring', grav: 0 });
   if (crit) { SFX.crit(); addShake(5); } else SFX.hit();
+  if (net) { if (m.hp <= 0) { m.hp = 0; m.pend = 1.2; m.barT = 0; } return; }   // 預測打死了：等伺服器確認（逾時就恢復成伺服器的 HP）
   if (m.hp <= 0) killMonster(m);
+  else if (chill) m.chill = chill;
+}
+// 死亡動畫（單機擊殺、即時連線時伺服器通知死亡都用這個）
+function mobDie(m, sound) {
+  const d = m.d;
+  m.dead = true; m.dying = m.dyMax = d.boss ? 1.4 : 0.6; m.respawnT = d.respawn; m.hp = 0; m.barT = 0; m.pend = 0;
+  if (sound) SFX.kill();
+  burst(m.x, m.y - d.h / 2, d.boss ? 60 : 14, d.parts, d.boss ? 420 : 220, 'dot');
+}
+// 一般怪的個人掉落（即時連線時每位有出力的玩家各自擲骰，只看得到自己的掉落）
+function mobLoot(m) {
+  const d = m.d;
+  spawnDrop('coin', m.x, m.y - 10, randi(d.coins[0], d.coins[1]));
+  if (Math.random() < d.drops.hp) spawnDrop('hp', m.x, m.y - 10, 1);
+  if (Math.random() < d.drops.mp) spawnDrop('mp', m.x, m.y - 10, 1);
+  if (d.equip && Math.random() < d.equip[0]) spawnDrop('equip', m.x, m.y - 10, rollItem(pick(d.equip[1])));
+  if (d.etc && questNeeds(d.etc[0]) && Math.random() < d.etc[1]) spawnDrop('etc', m.x, m.y - 10, d.etc[0]);
 }
 function killMonster(m) {
   const d = m.d, p = G.player;
-  m.dead = true; m.dying = m.dyMax = d.boss ? 1.4 : 0.6; m.respawnT = d.respawn; m.hp = 0; m.barT = 0;
-  SFX.kill();
-  burst(m.x, m.y - d.h / 2, d.boss ? 60 : 14, d.parts, d.boss ? 420 : 220, 'dot');
+  mobDie(m, true);
   if (d.boss) bossLoot(m);
-  else {
-    spawnDrop('coin', m.x, m.y - 10, randi(d.coins[0], d.coins[1]));
-    if (Math.random() < d.drops.hp) spawnDrop('hp', m.x, m.y - 10, 1);
-    if (Math.random() < d.drops.mp) spawnDrop('mp', m.x, m.y - 10, 1);
-    if (d.equip && Math.random() < d.equip[0]) spawnDrop('equip', m.x, m.y - 10, rollItem(pick(d.equip[1])));
-    if (d.etc && questNeeds(d.etc[0]) && Math.random() < d.etc[1]) spawnDrop('etc', m.x, m.y - 10, d.etc[0]);
-  }
+  else mobLoot(m);
   p.stats.kills++;
   if (d.boss) { p.stats.bossKills++; G.hazards = []; SFX.bossDie(); addShake(12); }
   questKill(m.type);
@@ -1158,14 +1148,14 @@ function bossLoot(m) {
 // 在矩形範圍內打擊最多 maxT 隻怪物（由近到遠）；chill > 0 時使其緩速 chill 秒
 function areaHit(x1, y1, x2, y2, mult, maxT, chill) {
   const p = G.player;
-  const list = G.monsters.filter(m => !m.dead && m.spawnFx <= 0 && overlap(x1, y1, x2, y2, m.x - m.d.w / 2, m.y - m.d.h, m.x + m.d.w / 2, m.y))
+  const list = G.monsters.filter(m => mobHittable(m) && overlap(x1, y1, x2, y2, m.x - m.d.w / 2, m.y - m.d.h, m.x + m.d.w / 2, m.y))
     .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x)).slice(0, maxT);
-  for (const m of list) { hitMonster(m, mult, m.x < p.x ? -1 : 1); if (chill && !m.dead) m.chill = chill; }
+  for (const m of list) hitMonster(m, mult, m.x < p.x ? -1 : 1, chill || 0);
   return list.length;
 }
 // 以 (cx, cy) 為中心、半徑 r 的範圍攻擊（爆炸類）
 function aoeHit(cx, cy, r, mult, maxT) {
-  const list = G.monsters.filter(m => !m.dead && m.spawnFx <= 0 && Math.abs(m.x - cx) < r + m.d.w / 2 && Math.abs(m.y - m.d.h / 2 - cy) < r + m.d.h / 2)
+  const list = G.monsters.filter(m => mobHittable(m) && Math.abs(m.x - cx) < r + m.d.w / 2 && Math.abs(m.y - m.d.h / 2 - cy) < r + m.d.h / 2)
     .sort((a, b) => Math.abs(a.x - cx) - Math.abs(b.x - cx)).slice(0, maxT);
   for (const m of list) hitMonster(m, mult, m.x < cx ? -1 : 1);
   return list.length;
@@ -1320,11 +1310,11 @@ const CAST = {
   thunder(p, lv, S) {
     p.atkT = 0.36; p.atkDur = 0.36; p.atkCD = 0.38; p.atkKind = 'cast';
     const f = p.face;
-    const list = G.monsters.filter(m => !m.dead && m.spawnFx <= 0 && (m.x - p.x) * f > -30 && (m.x - p.x) * f < 360 && Math.abs(m.y - p.y) < 150)
+    const list = G.monsters.filter(m => mobHittable(m) && (m.x - p.x) * f > -30 && (m.x - p.x) * f < 360 && Math.abs(m.y - p.y) < 150)
       .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x)).slice(0, 4);
     if (!list.length) G.fxs.push({ type: 'bolt', x: p.x + f * 170, y: p.y, t: 0, life: 0.3, seed: Math.random() * 99 });
     list.forEach((m, i) => later(0.06 + i * 0.05, () => {
-      if (m.dead) return;
+      if (m.dead || m.pend > 0) return;
       G.fxs.push({ type: 'bolt', x: m.x, y: m.y, t: 0, life: 0.3, seed: Math.random() * 99 });
       hitMonster(m, S.mult(lv), m.x < p.x ? -1 : 1);
     }));
@@ -1373,7 +1363,7 @@ const CAST = {
   wmeteor(p, lv, S) {   // 隕石術：砸向前方最近的敵人
     p.atkT = 0.45; p.atkDur = 0.45; p.atkCD = 0.46; p.atkKind = 'cast';
     const f = p.face;
-    const tgt = G.monsters.filter(m => !m.dead && m.spawnFx <= 0 && (m.x - p.x) * f > 20 && (m.x - p.x) * f < 420 && Math.abs(m.y - p.y) < 170)
+    const tgt = G.monsters.filter(m => mobHittable(m) && (m.x - p.x) * f > 20 && (m.x - p.x) * f < 420 && Math.abs(m.y - p.y) < 170)
       .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
     const tx = tgt ? tgt.x : p.x + f * 230, ty = tgt ? tgt.y : p.y;
     G.fxs.push({ type: 'meteor', x: tx, y: ty, dir: f, t: 0, life: 0.48 });
@@ -1794,7 +1784,7 @@ function updatePlayer(dt) {
         const range = stab ? ATTACK.stabRange + (A.range - 74) * 0.5 : A.range, top = stab ? p.y - 30 : p.y - 60;
         const x1 = p.face > 0 ? p.x - 8 : p.x - range, x2 = p.face > 0 ? p.x + range : p.x + 8;
         for (const m of G.monsters) {
-          if (m.dead || m.spawnFx > 0 || m.lastSwing === p.swing) continue;
+          if (!mobHittable(m) || m.lastSwing === p.swing) continue;
           if (overlap(x1, top, x2, p.y + 6, m.x - m.d.w / 2, m.y - m.d.h, m.x + m.d.w / 2, m.y)) { m.lastSwing = p.swing; hitMonster(m, A.mult, p.face); }
         }
       }
@@ -1834,6 +1824,53 @@ function updatePlayer(dt) {
 }
 
 // ================= 更新：怪物 =================
+// ---- 一般怪物的 AI（單機版與即時連線伺服器共用；Boss 另外在 updateBoss） ----
+// 單機：updateMonster → mobStep(m, dt, G.player, mobFx)；伺服器：worker/src/mobworld.js 用同一份 mobStep 模擬，
+// 目標 p 換成「最近的活著的玩家」（沒有時 p.dead = true），特效／音效改成事件送給前端。
+// fx(m, 種類, p)：'dash' 開始衝撞、'dashp' 衝撞中的粒子、'throw' 丟雪球（朝 p）、'slam' 震地、'dive' 開始俯衝、'divep' 俯衝中的粒子
+// <mobsim>
+function makeMonster(sp) {
+  const d = MONSTERS[sp.type], plat = PLATFORMS[sp.plat];
+  let minX, maxX;
+  if (d.boss) { minX = ARENA_X + 70; maxX = FROST_X - 70; }   // Boss 只在祭壇內活動
+  else if (d.ai === 'fly') { minX = Math.max(zoneL(sp.x) + 320, sp.x - 480); maxX = Math.min(zoneR(sp.x) - 40, sp.x + 480); }   // 飛行怪：不受平台限制，在出生點左右各 480 內活動
+  else if (plat.ground) {
+    if (sp.x >= FROST_X) { minX = Math.max(FROST_X + 420, sp.x - 230); maxX = Math.min(WORLD_W - 90, sp.x + 230); }   // 雪原：避開傳送門與嚮導
+    else { minX = Math.max(480, sp.x - 230); maxX = Math.min(sp.x < ARENA_X ? ARENA_X - 40 : FROST_X - 30, sp.x + 230); }
+  }
+  else { minX = plat.x + d.w / 2 + 2; maxX = plat.x + plat.w - d.w / 2 - 2; }
+  return {
+    sp, type: sp.type, d, x: sp.x, y: d.ai === 'fly' ? plat.y - FLY_H : plat.y, vx: 0, vy: 0, face: Math.random() < 0.5 ? -1 : 1, hp: d.hp,
+    minX, maxX, onGround: d.ai !== 'fly', state: 'walk', t: rand(0.5, 3), flash: 0, stun: 0, barT: 0, aggro: 0, chasing: false,
+    dead: false, dying: 0, dyMax: 0.6, respawnT: 0, spawnFx: 0.6, anim: Math.random() * 10, squash: 0, lastSwing: -1, stack: 0, stackT: 0,
+    chill: 0, boss: null, act: null, skCD: rand(1, 2.5), fly: null,
+  };
+}
+// 重生：回到出生點、補滿 HP（特效由呼叫端處理）
+function resetMonster(m) {
+  const plat = PLATFORMS[m.sp.plat];
+  Object.assign(m, { x: m.sp.x, y: plat.y, vx: 0, vy: 0, hp: m.d.hp, dead: false, dying: 0, onGround: true, spawnFx: 0.6, flash: 0, stun: 0, barT: 0, aggro: 0, state: 'idle', t: 1, chill: 0, boss: null,
+    act: null, skCD: rand(1, 2.5), fly: null });
+  if (m.d.ai === 'fly') { m.y = flyHome(m); m.onGround = false; }
+}
+// 怪物資料的指紋：前端與伺服器不同（例如改了出生點但 Worker 還沒重新部署）時，前端不使用伺服器的怪物
+function mobSig() {
+  const t = JSON.stringify([SPAWNS, MONSTERS, PLATFORMS, MSKILL]);
+  let h = 2166136261;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+// 落到平台上（玩家、怪物、掉落物共用）
+function landOn(b, prevY, ignore) {
+  if (b.vy < 0) return null;
+  let best = null;
+  for (const p of PLATFORMS) {
+    if (p === ignore) continue;
+    if (b.x < p.x - 3 || b.x > p.x + p.w + 3) continue;
+    if (prevY <= p.y + 0.5 && b.y >= p.y && (!best || p.y < best.y)) best = p;
+  }
+  return best;
+}
 function wander(m, dt) {
   m.t -= dt;
   if (m.t <= 0) {
@@ -1842,21 +1879,16 @@ function wander(m, dt) {
   }
   m.vx = m.state === 'walk' ? m.face * m.d.speed : 0;
 }
-function updateMonster(m, dt) {
-  if (m.dead) {
-    if (m.dying > 0) m.dying -= dt;
-    else { m.respawnT -= dt; if (m.respawnT <= 0) respawnMonster(m); }
-    return;
-  }
-  if (m.d.boss) { updateBoss(m, dt); return; }
-  const d = m.d, p = G.player;
-  m.anim += dt; m.flash -= dt; m.barT -= dt; m.aggro -= dt; m.stackT -= dt; m.chill = Math.max(0, m.chill - dt);
-  m.spawnFx = Math.max(0, m.spawnFx - dt); m.squash = Math.max(0, m.squash - dt * 4);
+// 活著的一般怪物前進 dt 秒（p = 目標玩家 { x, y, dead }）
+function mobStep(m, dt, p, fx) {
+  const d = m.d;
+  m.anim += dt; m.aggro -= dt; m.chill = Math.max(0, m.chill - dt);
+  m.spawnFx = Math.max(0, m.spawnFx - dt);
   m.chasing = false;
-  if (d.ai === 'fly') { updateFlyer(m, dt); monsterTouch(m); return; }
+  if (d.ai === 'fly') { updateFlyer(m, dt, p, fx); return; }
   if (m.skCD > 0) m.skCD -= dt;
   if (m.stun > 0) { m.stun -= dt; m.vx = approach(m.vx, 0, 700 * dt); }
-  else if (m.act) monsterAct(m, dt);   // 特殊招式進行中（預備動作／衝撞／投擲／震地）
+  else if (m.act) monsterAct(m, dt, p, fx);   // 特殊招式進行中（預備動作／衝撞／投擲／震地）
   else if (d.ai === 'wander') wander(m, dt);
   else if (d.ai === 'hop') {
     if (m.onGround) {
@@ -1885,17 +1917,17 @@ function updateMonster(m, dt) {
     if (pl) { m.y = pl.y; m.vy = 0; m.onGround = true; m.squash = 1; }
   }
   if (m.y > GROUND_Y) { m.y = GROUND_Y; m.onGround = true; }
-  monsterTouch(m);
 }
-// 接觸傷害（衝撞、俯衝時更痛）
-function monsterTouch(m) {
-  const d = m.d, p = G.player;
-  if (p.dead || p.inv > 0 || m.spawnFx > 0) return;
-  const pw = p.w / 2 - 2, mw = d.w / 2 - 4, ph = p.prone ? 22 : p.h;
-  if (overlap(p.x - pw, p.y - ph + 6, p.x + pw, p.y, m.x - mw, m.y - d.h + 6, m.x + mw, m.y)) {
-    const rush = (m.act && m.act.k === 'dash' && m.act.st === 'go') || (m.fly && m.fly.st === 'dive');
-    hurtPlayerBy(d.atk * (rush ? 1.3 : 1), m.x);
+// 被打中：擊退、硬直、仇恨（Boss 不會被擊退或硬直）；chill > 0 時緩速 chill 秒
+function mobKnock(m, dirX, crit, chill) {
+  const heavy = !!m.d.heavy;
+  m.aggro = 6;
+  if (!m.d.boss) {
+    m.vx = dirX * (heavy ? (crit ? 120 : 50) : (crit ? 260 : 170));
+    m.stun = heavy ? 0.12 : 0.28;
+    if (heavy) m.face = -dirX;
   }
+  if (chill > 0) m.chill = chill;
 }
 
 // ---- 雪原怪物的特殊招式：dash 衝撞（霜牙狼）、throw 丟雪球（暴雪雪人）、slam 震地（永凍巨像） ----
@@ -1907,8 +1939,8 @@ const MSKILL = {
 };
 function skillInRange(k, adx, dy) { const S = MSKILL[k]; return adx >= S.near && adx <= S.far && dy <= S.dy; }
 function startAct(m) { m.act = { k: m.d.skill, st: 'tele', t: MSKILL[m.d.skill].tele }; m.vx = 0; m.chasing = true; }
-function monsterAct(m, dt) {
-  const A = m.act, d = m.d, p = G.player, S = MSKILL[A.k];
+function monsterAct(m, dt, p, fx) {
+  const A = m.act, d = m.d, S = MSKILL[A.k];
   m.chasing = true;
   A.t -= dt;
   if (A.st === 'tele') {
@@ -1916,13 +1948,13 @@ function monsterAct(m, dt) {
     if (A.t > S.tele * 0.4 && !p.dead) m.face = p.x < m.x ? -1 : 1;   // 預備動作前半段仍會轉向玩家
     if (A.t > 0) return;
     A.st = 'go';
-    if (A.k === 'dash') { A.t = 0.55; SFX.charge(); }
-    else if (A.k === 'throw') { A.t = 0.15; throwSnowball(m); }
-    else { A.t = 0.1; monsterSlam(m); }
+    if (A.k === 'dash') { A.t = 0.55; fx(m, 'dash', p); }
+    else if (A.k === 'throw') { A.t = 0.15; fx(m, 'throw', p); }
+    else { A.t = 0.1; fx(m, 'slam', p); }
   } else if (A.st === 'go') {
     if (A.k === 'dash') {
       m.vx = m.face * d.dashV;
-      if (Math.random() < 0.7) G.parts.push({ x: m.x - m.face * 24, y: m.y - rand(2, 16), vx: -m.face * rand(40, 140), vy: rand(-90, -20), t: 0, life: 0.45, color: pick(['#ffffff', '#dfe9f5', '#bfe8ff']), size: rand(2, 4), type: 'dot', grav: 260 });
+      fx(m, 'dashp', p);
       if ((m.face < 0 && m.x <= m.minX + 1) || (m.face > 0 && m.x >= m.maxX - 1)) A.t = 0;
     } else m.vx = 0;
     if (A.t <= 0) { A.st = 'rec'; A.t = S.rec; m.vx *= 0.2; }
@@ -1931,26 +1963,12 @@ function monsterAct(m, dt) {
     if (A.t <= 0) { m.act = null; m.skCD = rand(S.cd[0], S.cd[1]); }
   }
 }
-// 暴雪雪人：朝玩家目前的位置丟出拋物線雪球（落在平台或地面就碎掉）
-function throwSnowball(m) {
-  const p = G.player, d = m.d, ox = m.x + m.face * 18, oy = m.y - d.h - 6, g = 900;
-  const dx = p.x - ox, dy = (p.y - 26) - oy, T = clamp(Math.abs(dx) / 430, 0.45, 1.1);
-  G.hazards.push({ type: 'snowball', x: ox, y: oy, vx: dx / T, vy: (dy - 0.5 * g * T * T) / T, g, r: 11, atk: d.atk * 0.9, t: 0, life: 3, z0: zoneL(m.x), z1: zoneR(m.x) });
-  SFX.toss();
-}
-// 永凍巨像：雙臂砸地，冰震波沿著腳下的平台（或地面）往左右擴散，跳起來可以躲開
-function monsterSlam(m) {
-  const d = m.d;
-  addShake(5); SFX.slam();
-  burst(m.x, m.y - 4, 18, ['#ffffff', '#bfe6ff', '#8fc8ec'], 260, 'dot', 500);
-  for (const dir of [-1, 1]) G.hazards.push({ type: 'wave', ice: true, x: m.x + dir * 34, dir, dist: 0, max: 260, spd: 380, atk: d.atk * 0.85, hit: false, t: 0, gy: m.y, x0: m.minX - 36, x1: m.maxX + 36 });
-}
 
 // ---- 飛行怪（冰晶蝙蝠）：在空中跟著玩家（停在身體高度、保持一點距離），每隔幾秒預備後朝玩家俯衝 ----
 const FLY_H = 70;   // 沒發現玩家時，在出生平台上方多高的地方盤旋
 const flyHome = m => PLATFORMS[m.sp.plat].y - FLY_H;
-function updateFlyer(m, dt) {
-  const d = m.d, p = G.player;
+function updateFlyer(m, dt, p, fx) {
+  const d = m.d;
   if (!m.fly) m.fly = { st: 'idle', t: 0, cd: rand(1.5, 3), wx: m.sp.x, wy: flyHome(m), tx: 0, ty: 0 };
   const F = m.fly, slow = m.chill > 0 ? 0.45 : 1;
   const steer = (tx, ty, spd) => {   // 平滑地往目標點移動
@@ -1964,11 +1982,11 @@ function updateFlyer(m, dt) {
     if (F.t <= 0) {
       const a = Math.atan2(F.ty - m.y, F.tx - m.x);
       F.st = 'dive'; F.t = 0.65; m.vx = Math.cos(a) * d.dive; m.vy = Math.sin(a) * d.dive; m.face = m.vx < 0 ? -1 : 1;
-      SFX.dive();
+      fx(m, 'dive', p);
     }
   } else if (F.st === 'dive') {
     F.t -= dt; m.chasing = true;
-    if (Math.random() < 0.6) G.parts.push({ x: m.x, y: m.y - d.h / 2, vx: rand(-30, 30), vy: rand(-30, 30), t: 0, life: 0.35, color: pick(['#ffffff', '#bfe8ff', '#9fe8ff']), size: rand(2, 3.5), type: 'dot', grav: 0 });
+    fx(m, 'divep', p);
     if (F.t <= 0 || m.y >= GROUND_Y - 2) { F.st = 'idle'; F.cd = rand(2.4, 3.8); }
   } else {
     const dx = p.x - m.x, dy = p.y - m.y;
@@ -1990,6 +2008,54 @@ function updateFlyer(m, dt) {
   if (m.x > m.maxX) { m.x = m.maxX; m.vx = Math.min(0, m.vx); }
   m.y = clamp(m.y, GROUND_Y - 430, GROUND_Y - 2);
   m.onGround = false;
+}
+// </mobsim>
+
+// ---- 單機版（以及即時連線時的 Boss）：每一步更新一隻怪物 ----
+function updateMonster(m, dt) {
+  if (mnOwns(m)) { if (!m.dead && !m.hide) monsterTouch(m); return; }   // 伺服器的怪物：位置在 mnFrame 內插，這裡只判定碰撞傷害
+  if (m.dead) {
+    if (m.dying > 0) m.dying -= dt;
+    else { m.respawnT -= dt; if (m.respawnT <= 0) respawnMonster(m); }
+    return;
+  }
+  if (m.d.boss) { updateBoss(m, dt); return; }
+  m.flash -= dt; m.barT -= dt; m.stackT -= dt; m.squash = Math.max(0, m.squash - dt * 4);
+  mobStep(m, dt, G.player, mobFx);
+  monsterTouch(m);
+}
+// 怪物 AI 的特效／音效（單機版；即時連線時由伺服器事件觸發同樣的函式）
+function mobFx(m, k, p) {
+  if (k === 'dash') SFX.charge();
+  else if (k === 'dive') SFX.dive();
+  else if (k === 'throw') throwSnowball(m, p.x, p.y);
+  else if (k === 'slam') monsterSlam(m);
+  else if (k === 'dashp') { if (Math.random() < 0.7) G.parts.push({ x: m.x - m.face * 24, y: m.y - rand(2, 16), vx: -m.face * rand(40, 140), vy: rand(-90, -20), t: 0, life: 0.45, color: pick(['#ffffff', '#dfe9f5', '#bfe8ff']), size: rand(2, 4), type: 'dot', grav: 260 }); }
+  else if (k === 'divep') { if (Math.random() < 0.6) G.parts.push({ x: m.x, y: m.y - m.d.h / 2, vx: rand(-30, 30), vy: rand(-30, 30), t: 0, life: 0.35, color: pick(['#ffffff', '#bfe8ff', '#9fe8ff']), size: rand(2, 3.5), type: 'dot', grav: 0 }); }
+}
+// 接觸傷害（衝撞、俯衝時更痛）
+function monsterTouch(m) {
+  const d = m.d, p = G.player;
+  if (p.dead || p.inv > 0 || m.spawnFx > 0) return;
+  const pw = p.w / 2 - 2, mw = d.w / 2 - 4, ph = p.prone ? 22 : p.h;
+  if (overlap(p.x - pw, p.y - ph + 6, p.x + pw, p.y, m.x - mw, m.y - d.h + 6, m.x + mw, m.y)) {
+    const rush = (m.act && m.act.k === 'dash' && m.act.st === 'go') || (m.fly && m.fly.st === 'dive');
+    hurtPlayerBy(d.atk * (rush ? 1.3 : 1), m.x);
+  }
+}
+// 暴雪雪人：朝 (tx, ty)（目標玩家的位置）丟出拋物線雪球（落在平台或地面就碎掉）
+function throwSnowball(m, tx, ty) {
+  const d = m.d, ox = m.x + m.face * 18, oy = m.y - d.h - 6, g = 900;
+  const dx = tx - ox, dy = (ty - 26) - oy, T = clamp(Math.abs(dx) / 430, 0.45, 1.1);
+  G.hazards.push({ type: 'snowball', x: ox, y: oy, vx: dx / T, vy: (dy - 0.5 * g * T * T) / T, g, r: 11, atk: d.atk * 0.9, t: 0, life: 3, z0: zoneL(m.x), z1: zoneR(m.x) });
+  SFX.toss();
+}
+// 永凍巨像：雙臂砸地，冰震波沿著腳下的平台（或地面）往左右擴散，跳起來可以躲開
+function monsterSlam(m) {
+  const d = m.d;
+  addShake(5); SFX.slam();
+  burst(m.x, m.y - 4, 18, ['#ffffff', '#bfe6ff', '#8fc8ec'], 260, 'dot', 500);
+  for (const dir of [-1, 1]) G.hazards.push({ type: 'wave', ice: true, x: m.x + dir * 34, dir, dist: 0, max: 260, spd: 380, atk: d.atk * 0.85, hit: false, t: 0, gy: m.y, x0: m.minX - 36, x1: m.maxX + 36 });
 }
 
 // ================= 更新：Boss（霧之守衛） =================
@@ -2137,7 +2203,7 @@ function updateProjs(dt) {
     if (tc && Math.random() < 0.7) G.parts.push({ x: pr.x - pr.dir * 14, y: pr.y + rand(-pr.hh * 0.7, pr.hh * 0.7), vx: -pr.dir * rand(20, 80), vy: rand(-20, 20), t: 0, life: 0.35, color: pick(tc), size: rand(2, 3.5), type: 'dot', grav: 0 });
     for (const m of G.monsters) {
       if (pr.pierce <= 0) break;
-      if (m.dead || m.spawnFx > 0 || pr.hits.has(m)) continue;
+      if (!mobHittable(m) || pr.hits.has(m)) continue;
       if (overlap(pr.x - pr.hw, pr.y - pr.hh, pr.x + pr.hw, pr.y + pr.hh, m.x - m.d.w / 2, m.y - m.d.h, m.x + m.d.w / 2, m.y)) {
         if (pr.aoe) { explode(pr); break; }
         pr.hits.add(m); pr.pierce--; hitMonster(m, pr.mult, pr.dir);
@@ -3150,7 +3216,7 @@ function drawIcegolem(m, F) {   // 永凍巨像：冰塊堆成的巨人、肩上
 const MONSTER_DRAW = { moss: drawMoss, shroom: drawShroom, golem: drawGolem, wolf: drawWolf, treant: drawTreant, sentry: drawSentry, wraith: drawWraith, knightm: drawKnightm, guardian: drawGuardian,
   snowimp: drawSnowimp, frostwolf: drawFrostwolf, yeti: drawYeti, icebat: drawIcebat, icegolem: drawIcegolem };
 function drawMonster(m) {
-  if (m.dead && m.dying <= 0) return;
+  if ((m.dead && m.dying <= 0) || m.hide) return;
   const d = m.d;
   ctx.save(); ctx.translate(m.x, m.y);
   let a = 1;
@@ -3463,7 +3529,7 @@ function drawMinimap() {
   ctx.fillStyle = '#9fe8ff'; for (const t of PORTALS) ctx.fillRect(X(t.x) - 2, Y(GROUND_Y) - 7, 4, 6);   // 傳送門
   if (!snow) { ctx.fillStyle = 'rgba(255,90,90,.18)'; ctx.fillRect(X(ARENA_X), my, X(FROST_X) - X(ARENA_X), mh); }   // 祭壇範圍
   for (const m of G.monsters) {
-    if (m.dead) continue;
+    if (m.dead || m.hide) continue;
     if (m.d.boss) { ctx.fillStyle = '#ff3b3b'; ctx.fillRect(X(m.x) - 3, Y(m.y) - 6, 6, 6); ctx.strokeStyle = '#ffffff'; ctx.strokeRect(X(m.x) - 3, Y(m.y) - 6, 6, 6); continue; }
     ctx.fillStyle = m.d.lv >= 30 ? '#ffb86a' : m.d.lv >= 18 ? '#8fd0ff' : m.d.lv >= 12 ? '#d58bff' : m.d.heavy ? '#ff6a4a' : '#ff9a8e'; ctx.fillRect(X(m.x) - 1.5, Y(m.y) - 3, 3, 3);
   }
@@ -4494,6 +4560,7 @@ function netPlayer(q) {
 }
 // 每一幀：其他玩家的位置內插、動畫與計時器（不受「開視窗時暫停」影響）
 function netFrame(dt) {
+  mnFrame(dt);
   if (NET.emT > 0) NET.emT -= dt;
   if (NET.emCD > 0) NET.emCD -= dt;
   if (NET.bubT > 0) NET.bubT -= dt;
@@ -4654,6 +4721,10 @@ function rtMessage(S, data) {
     for (const q of Array.isArray(m.players) ? m.players.slice(0, 60) : []) netPlayer(q);
     if (NET.card) renderCard();
     netRefreshWin();
+  } else if (m.t === 'm') {
+    if (MN.on) mnMessage(m);
+  } else if (m.t === 'k') {
+    mnKill(m);
   } else if (m.t === 'leave') {
     const id = n0(m.id);
     NET.others.delete(id);
@@ -4686,6 +4757,10 @@ function rtWelcome(S, m) {
   if (RT.fallback) toast('已改用即時連線', '#9ff0c8');
   RT.fails = 0; RT.fallback = false; RT.retryAt = 0;
   RT.pingAt = RT.pongAt = netNow(); RT.sentAt = 0;
+  // 伺服器權威的怪物：Worker 支援同一版協定、怪物資料相同才啟用（舊版 Worker 沒有 mobs 欄位 → 照舊用本機怪物）
+  S.mobs = n0(m.mobs) === MN_PROTO && m.msig === mnSigLocal();
+  MN.mobs.clear(); MN.hq = [];   // 換頻道：等新頻道的快照
+  if (n0(m.mobs) && !S.mobs) console.warn('[mistwood] 伺服器怪物版本不同，改用本機怪物', m.mobs, m.msig, mnSigLocal());
   NET.transport = 'ws'; NET.sentSig = '';
   if (n0(m.ch) !== NET.ch) NET.seen.clear();   // 各頻道的聊天編號各自遞增：換頻道時重新記錄
   netApply({ ch: m.ch, nch: m.nch, cap: m.cap, online: m.online, total: m.total, chans: m.chans, me: m.me, now: m.now,
@@ -4734,6 +4809,148 @@ function rtRequest(obj, ms = 6000) {
     RT.pend.set(q, { resolve, reject, timer });
     rtSend({ ...obj, q });
   });
+}
+
+// ---- 即時連線：伺服器權威的一般怪物（第六階段 6-2；Boss 仍在本機，6-3 再搬） ----
+// 只有在 Worker 的 welcome 宣告支援（mobs = MN_PROTO）而且怪物資料指紋相同（msig）時才啟用；
+// 舊版 Worker、HTTP 備援、斷線、訪客 → 一律用本機的單機怪物（和以前完全一樣）。
+// 伺服器 → 前端：
+//   {t:'m', n, u:[[id, x, y, 旗標, hp, 招式, 招式剩餘(1/100 秒)], ...], g:[離開範圍的 id], e:[[id, 事件, ...]]}
+//     旗標：1 面向左、2 在地上、4 追擊中、8 走路中、16 仇恨中、32 緩速中、64 死亡、128 剛重生
+//     招式：MN_ACTS 的索引；事件：1 丟雪球（目標 x, y）、2 震地、3 開始衝撞、4 開始俯衝
+//   {t:'k', id, x: 分到的經驗值, l: 1 = 最後一擊}   有出力的玩家才會收到：前端給經驗、金幣、任務擊殺數並擲個人掉寶
+// 前端 → 伺服器：{t:'h', h:[[id, 傷害, 方向, 爆擊?1:0, 緩速秒數?], ...]}
+const MN_PROTO = 1;
+const MN_DELAY = 150;            // 怪物位置緩衝（毫秒）：顯示約 0.15 秒前的位置，兩筆快照之間平滑內插
+const MN_RANGE = 1600;           // 伺服器只送左右約 1500 內的怪；超過這個距離的舊資料不顯示
+const MN_HIT_MS = 50;            // 命中訊息合併送出的最短間隔
+const MN_PRED = 1;               // 自己打出的傷害先顯示，這段時間內伺服器沒有確認就恢復成伺服器的 HP（秒）
+const MN_ACTS = [null, ['dash', 'tele'], ['dash', 'go'], ['dash', 'rec'], ['throw', 'tele'], ['throw', 'go'], ['throw', 'rec'],
+  ['slam', 'tele'], ['slam', 'go'], ['slam', 'rec'], ['fly', 'tele'], ['fly', 'dive']];
+const MN = { on: false, mobs: new Map(), hq: [], sentAt: 0, sig: '' };   // mobs：出生點 id → 伺服器的最新狀態與位置緩衝
+const mnOwns = m => MN.on && !m.d.boss;
+const mnSigLocal = () => MN.sig || (MN.sig = mobSig());
+// 切換：伺服器怪物 ↔ 本機單機怪物
+function mnSwitch(on) {
+  if (on === MN.on) return;
+  MN.on = on; MN.hq = [];
+  for (const m of G.monsters) {
+    if (m.d.boss) continue;
+    m.pend = 0; m.predT = 0;
+    if (on) { m.hide = true; m.net = null; continue; }
+    // 改回單機：看得到的怪留在原地繼續用本機 AI，看不到的回出生點重生
+    const seen = !m.hide;
+    m.hide = false; m.net = null;
+    if (!seen) resetMonster(m);
+    else if (m.dead) { m.dying = Math.max(0, m.dying); m.respawnT = Math.min(m.d.respawn, 3); }
+    else Object.assign(m, { vx: 0, vy: 0, act: null, fly: null, stun: 0, state: 'idle', t: 1, aggro: 0, chill: 0, onGround: m.d.ai !== 'fly' && m.onGround });
+  }
+  MN.mobs.clear();
+}
+function mnMessage(msg) {
+  rtClock(msg.n);
+  const t = (+msg.n || netNow()) - (NET.off || 0);
+  if (Array.isArray(msg.u)) for (const u of msg.u.slice(0, 120)) mnEntry(u, t);
+  if (Array.isArray(msg.g)) for (const id of msg.g.slice(0, 120)) MN.mobs.delete(n0(id));
+  if (Array.isArray(msg.e)) for (const e of msg.e.slice(0, 40)) mnEvent(e);
+}
+function mnEntry(u, t) {
+  if (!Array.isArray(u) || u.length < 5) return;
+  const id = n0(u[0]), m = G.monsters[id], x = +u[1], y = +u[2];
+  if (!m || m.sp.id !== id || m.d.boss || !isFinite(x) || !isFinite(y)) return;
+  let E = MN.mobs.get(id);
+  if (!E) { E = { id, buf: [], x, y }; MN.mobs.set(id, E); }
+  const B = E.buf, last = B[B.length - 1];
+  if (last && Math.hypot(x - last.x, y - last.y) > 400) B.length = 0;   // 重生、瞬移：不內插
+  else if (last && t - last.t > 200) B.push({ t: t - 100, x: last.x, y: last.y });   // 靜止一段時間後才開始動：從上一個 tick 開始內插
+  B.push({ t, x, y });
+  if (B.length > 10) B.splice(0, B.length - 10);
+  E.x = x; E.y = y;
+  E.fl = n0(u[3]); E.hp = Math.max(0, Math.round(+u[4] || 0)); E.ac = n0(u[5]); E.at = clamp((+u[6] || 0) / 100, 0, 2);
+  if (m.net === E) mnApply(m, E, false);
+}
+// 把伺服器的狀態套到怪物上（bind = 第一次對應到這隻怪，例如剛進入範圍、讀取存檔後重建了怪物）
+function mnApply(m, E, bind) {
+  const fl = E.fl, d = m.d, dead = !!(fl & 64);
+  if (bind) { m.x = E.x; m.y = E.y; m.vx = m.vy = 0; m.dead = dead; m.dying = 0; m.spawnFx = fl & 128 ? 0.6 : 0; m.hp = E.hp; m.flash = 0; m.barT = 0; m.pend = 0; m.predT = 0; }
+  else if (dead && !m.dead) mobDie(m, false);   // 別人打死的
+  else if (!dead && m.dead) {   // 重生
+    m.dead = false; m.dying = 0; m.spawnFx = 0.6; m.hp = d.hp; m.pend = 0; m.predT = 0; m.barT = 0;
+    m.x = E.x; m.y = E.y; E.buf = [{ t: netNow() - 1000, x: E.x, y: E.y }];
+    burst(m.x, m.y - d.h / 2, 10, ['#fff7d6', '#bde8c8'], 120, 'dot');
+  }
+  const ground = !!(fl & 2);
+  if (!bind && ground && !m.onGround) m.squash = 1;
+  m.face = fl & 1 ? -1 : 1; m.onGround = ground; m.chasing = !!(fl & 4); m.state = fl & 8 ? 'walk' : 'idle';
+  m.aggro = fl & 16 ? 1 : 0; m.chill = fl & 32 ? 1 : 0;
+  if (!m.dead) {
+    if (m.pend > 0 || m.predT > 0) m.hp = Math.min(m.hp, E.hp);   // 自己剛打的傷害還沒被伺服器算進去
+    else { if (E.hp < m.hp) { m.flash = 0.1; m.barT = 5; } m.hp = E.hp; }   // 別人打的
+  }
+  const A = MN_ACTS[E.ac] || null;
+  if (!A) { m.act = null; if (m.fly) m.fly.st = 'idle'; }
+  else if (A[0] === 'fly') { m.act = null; if (!m.fly) m.fly = { st: 'idle', t: 0 }; if (m.fly.st !== A[1]) { m.fly.st = A[1]; m.fly.t = E.at; } }
+  else if (!m.act || m.act.k !== A[0] || m.act.st !== A[1]) m.act = { k: A[0], st: A[1], t: E.at };
+}
+function mnEvent(e) {
+  if (!Array.isArray(e)) return;
+  const id = n0(e[0]), m = G.monsters[id];
+  if (!m || m.d.boss || !MN.mobs.has(id) || m.hide) return;
+  const k = e[1];
+  if (k === 1) { const tx = +e[2], ty = +e[3]; if (isFinite(tx) && isFinite(ty)) throwSnowball(m, tx, ty); }
+  else if (k === 2) monsterSlam(m);
+  else if (k === 3) SFX.charge();
+  else if (k === 4) SFX.dive();
+}
+// 擊殺結算（有出力的人才會收到）：經驗值依傷害比例、任務擊殺數、個人掉寶
+function mnKill(msg) {
+  const id = n0(msg.id), m = G.monsters[id], p = G.player;
+  if (!m || m.sp.id !== id || m.d.boss || !p) return;
+  const exp = clamp(n0(msg.x), 0, m.d.exp);
+  const E = MN.mobs.get(id);
+  if (E && E.fl !== undefined) E.fl |= 64;
+  if (MN.on && !m.dead) mobDie(m, true); else SFX.kill();
+  mobLoot(m);
+  p.stats.kills++;
+  questKill(m.type);
+  if (exp > 0) gainExp(exp);
+}
+function mnHit(m, dmg, dir, crit, chill) {
+  m.predT = MN_PRED;
+  const h = [m.sp.id, dmg, dir < 0 ? -1 : 1, crit ? 1 : 0];
+  if (chill > 0) h.push(Math.round(chill * 10) / 10);
+  MN.hq.push(h);
+}
+// 每一幀（netFrame 呼叫）：切換模式、內插位置、計時器、送出命中
+function mnFrame(dt) {
+  mnSwitch(!!(RT.ws && RT.ws.mobs && rtLive() && G.player));
+  if (!MN.on) return;
+  const p = G.player, now = netNow(), rt = now - MN_DELAY;
+  for (const m of G.monsters) {
+    if (m.d.boss) continue;
+    const E = MN.mobs.get(m.sp.id);
+    if (!E || E.fl === undefined || Math.abs(E.x - p.x) > MN_RANGE || zoneL(E.x) !== zoneL(p.x)) { m.hide = true; m.net = null; continue; }
+    if (m.hide || m.net !== E) { m.hide = false; m.net = E; mnApply(m, E, true); }
+    const S = E.buf;
+    let x = E.x, y = E.y;
+    if (S.length) {
+      let a = S[0], b = null;
+      for (let i = 0; i < S.length; i++) { if (S[i].t <= rt) { a = S[i]; b = S[i + 1] || null; } else break; }
+      x = a.x; y = a.y;
+      if (b) { const k = clamp((rt - a.t) / Math.max(1, b.t - a.t), 0, 1); x = lerp(a.x, b.x, k); y = lerp(a.y, b.y, k); }
+    }
+    if (dt > 0) { m.vx = lerp(m.vx, (x - m.x) / dt, 0.35); m.vy = lerp(m.vy, (y - m.y) / dt, 0.35); }
+    m.x = x; m.y = y;
+    m.anim += dt; m.flash -= dt; m.barT -= dt; m.stackT -= dt; m.squash = Math.max(0, m.squash - dt * 4); m.spawnFx = Math.max(0, m.spawnFx - dt);
+    if (m.dead) { if (m.dying > 0) m.dying -= dt; continue; }
+    if (m.act) m.act.t = Math.max(0, m.act.t - dt);
+    if (m.fly) m.fly.t = Math.max(0, (m.fly.t || 0) - dt);
+    if (m.predT > 0) { m.predT -= dt; if (m.predT <= 0 && !(m.pend > 0)) m.hp = E.hp; }
+    if (m.pend > 0) { m.pend -= dt; if (m.pend <= 0) { m.hp = E.hp; m.predT = 0; } }   // 預測打死但伺服器沒有確認：恢復
+    if (m.act && m.act.k === 'dash' && m.act.st === 'go') mobFx(m, 'dashp', p);
+    else if (m.fly && m.fly.st === 'dive') mobFx(m, 'divep', p);
+  }
+  if (MN.hq.length && now - MN.sentAt >= MN_HIT_MS) { MN.sentAt = now; rtSend({ t: 'h', h: MN.hq.splice(0, 24) }); }
 }
 
 // ---- 聊天 ----
@@ -5317,7 +5534,7 @@ const WIN = {
     const guest = NET.mode === 'g', st = netStatusText() || '多人連線：連線中…';
     let h = `<div class="hd">${esc(st)}${NET.st === 'ok' ? `<span class="dim" style="font-weight:600;font-size:12px">（全部頻道共 ${NET.total} 人）</span>` : ''}</div>`;
     if (guest) h += '<div class="d dim" style="margin-bottom:6px">訪客模式：<b>登入後才能看到其他玩家</b>、進入頻道與聊天，其他玩家也才看得到你（按 L 登入）。表情仍可使用（只有自己看得到）。</div>';
-    else if (NET.st === 'ok') h += `<div class="d dim" style="margin-bottom:6px">連線方式：${NET.transport === 'ws' ? '即時連線（WebSocket）' : RT_URL ? '一般連線（HTTP 輪詢；即時連線暫時連不上，背景自動重試）' : '一般連線（HTTP 輪詢）'}</div>`;
+    else if (NET.st === 'ok') h += `<div class="d dim" style="margin-bottom:6px">連線方式：${NET.transport === 'ws' ? (MN.on ? '即時連線（WebSocket，怪物同步）' : '即時連線（WebSocket）') : RT_URL ? '一般連線（HTTP 輪詢；即時連線暫時連不上，背景自動重試）' : '一般連線（HTTP 輪詢）'}</div>`;
     if (NET.st === 'dup') h += '<div class="det dim">這個帳號已在其他分頁或裝置連線，這裡暫停多人同步，約 1 分鐘後自動重新連線。</div>';
     if (NET.st === 'unsup') h += '<div class="det dim">伺服器還沒更新到支援多人同步的版本，遊戲其他功能不受影響。</div>';
     if (NET.st === 'offline') h += '<div class="det dim">暫時連不上多人伺服器，會自動重試；遊戲與存檔不受影響。</div>';
