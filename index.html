@@ -1092,11 +1092,7 @@ function hitMonster(m, mult, dirX, chill = 0) {
   const net = mnOwns(m);
   if (net) mnHit(m, dmg, dirX, crit, chill);   // 伺服器的怪物：送出命中，擊退與死亡由伺服器決定（傷害數字照樣立刻顯示）
   else mobKnock(m, dirX, crit, 0);
-  if (m.stackT <= 0) m.stack = 0;
-  const yy = m.y - m.d.h - 14 - m.stack * 24;
-  m.stack++; m.stackT = 0.45;
-  if (crit) ftext(m.x, yy, String(dmg), '#ff5a3c', 32, '#2a0802', 1.1, { crit: true });
-  else ftext(m.x, yy, String(dmg), '#ffe9a8', 24, '#5a2a08', 1.0);
+  mobDmgText(m, dmg, crit, false);
   const hx = m.x - dirX * m.d.w * 0.2, hy = m.y - m.d.h * 0.55;
   burst(hx, hy, crit ? 16 : 9, crit ? ['#fff', '#ffd23e', '#ff7a3c'] : ['#fff', '#ffe9a8'], crit ? 360 : 240);
   G.parts.push({ x: hx, y: hy, vx: 0, vy: 0, t: 0, life: 0.18, color: '#fff', size: crit ? 26 : 18, type: 'ring', grav: 0 });
@@ -1104,6 +1100,15 @@ function hitMonster(m, mult, dirX, chill = 0) {
   if (net) { if (m.hp <= 0) { m.hp = 0; m.pend = 1.2; m.barT = 0; } return; }   // 預測打死了：等伺服器確認（逾時就恢復成伺服器的 HP）
   if (m.hp <= 0) killMonster(m);
   else if (chill) m.chill = chill;
+}
+// 怪物頭上的傷害數字（連續命中時往上疊）；other = 其他玩家打的（顏色較淡、字較小）
+function mobDmgText(m, dmg, crit, other) {
+  if (m.stackT <= 0) m.stack = 0;
+  const yy = m.y - m.d.h - 14 - m.stack * 24;
+  m.stack++; m.stackT = 0.45;
+  if (other) ftext(m.x, yy, String(dmg), crit ? '#ffa48a' : '#cfe6ff', crit ? 24 : 19, crit ? '#2a0802' : '#14284a', 0.9, crit ? { crit: true } : null);
+  else if (crit) ftext(m.x, yy, String(dmg), '#ff5a3c', 32, '#2a0802', 1.1, { crit: true });
+  else ftext(m.x, yy, String(dmg), '#ffe9a8', 24, '#5a2a08', 1.0);
 }
 // 死亡動畫（單機擊殺、即時連線時伺服器通知死亡都用這個）
 function mobDie(m, sound) {
@@ -1192,6 +1197,7 @@ function hurtPlayerBy(atk, sx) {
   const dmg = Math.max(1, Math.round((atk * rand(0.9, 1.1) - p.def) * (1 - p.dmgRed)));
   p.hp = Math.max(0, p.hp - dmg);
   ftext(p.x, p.y - 64, String(dmg), '#c58bff', 24, '#22083a', 1.0);
+  netFx(['d', dmg]);
   p.inv = 1.3; p.hurtT = 0.28; p.atkT = 0; p.rope = null; p.spin = null;
   p.vx = (p.x < sx ? -1 : 1) * 260; p.vy = -330; p.onGround = false; p.plat = null;
   SFX.hurt(); addShake(3);
@@ -1248,6 +1254,7 @@ function startAttack(p, prone) {
   if (A.type === 'melee') { p.atkKind = prone ? 'stab' : 'melee'; SFX.swing(); return; }
   p.atkKind = prone ? 'pshot' : 'shot';
   const y = prone ? p.y - 9 : p.y - 28, dir = p.face;
+  netFx(['a', dir, Math.round(p.x), Math.round(p.y), prone ? 1 : 0]);
   later(0.07, () => {
     if (p.dead) return;
     fireProj({ kind: A.proj, x: p.x + dir * 20, y, dir, speed: A.speed, range: A.range, mult: A.mult, hw: A.proj === 'arrow' ? 18 : 14, hh: A.proj === 'arrow' ? 8 : 12 });
@@ -1267,7 +1274,9 @@ function castSkill(id) {
   const mp = S.mp(lv);
   if (p.mp < mp) { ftext(p.x, p.y - 70, 'MP 不足', '#7ec4ff', 16, '#0a1a33', 0.9); SFX.deny(); p.cds[id] = 0.25; return; }
   p.mp -= mp; p.cds[id] = S.cd;
-  CAST[S.cast](p, lv, S, id);
+  const x0 = Math.round(p.x), y0 = Math.round(p.y);
+  const pts = CAST[S.cast](p, lv, S, id);   // 雷擊／隕石術回傳落點座標（給其他玩家顯示特效用）
+  netFx(['k', id, p.face, x0, y0].concat(pts || []));
 }
 const CAST = {
   wind(p, lv, S) {
@@ -1319,6 +1328,7 @@ const CAST = {
       hitMonster(m, S.mult(lv), m.x < p.x ? -1 : 1);
     }));
     SFX.thunder(); addShake(3.5);
+    return list.flatMap(m => [Math.round(m.x), Math.round(m.y)]);
   },
   // ---- 二轉技能 ----
   kcharge(p, lv, S) {   // 衝鋒突刺：向前衝刺，打擊路徑上的敵人
@@ -1375,6 +1385,7 @@ const CAST = {
       addShake(9); SFX.boom();
     });
     SFX.meteor();
+    return [Math.round(tx), Math.round(ty)];
   },
   buff(p, lv, S, id) {
     p.atkT = 0.3; p.atkDur = 0.3; p.atkCD = 0.3; p.atkKind = 'cast';
@@ -2188,12 +2199,13 @@ function updateHazards(dt) {
 const PROJ_TRAIL = { wind: ['#bff7ec', '#5fd6bf'], magic: ['#e3d0ff', '#9a7aff'], fire: ['#ffd23e', '#ff7a3c'], bigarrow: ['#d8ffc8', '#8fe36a'], bomb: ['#ffd23e', '#ff7a3c', '#7a2a0a'] };
 function explode(pr) {
   const r = pr.aoe;
-  aoeHit(pr.x, pr.y, r, pr.mult, pr.maxT || 5);
   G.fxs.push({ type: 'boom', x: pr.x, y: pr.y, t: 0, life: 0.35, r });
-  burst(pr.x, pr.y, 18, ['#fff3a6', '#ffb23e', '#ff5a36'], 260, 'spark');
+  burst(pr.x, pr.y, pr.cos ? 10 : 18, ['#fff3a6', '#ffb23e', '#ff5a36'], 260, 'spark');
+  pr.pierce = 0;
+  if (pr.cos) return;   // 其他玩家的投射物：只有特效
+  aoeHit(pr.x, pr.y, r, pr.mult, pr.maxT || 5);
   addShake(pr.kind === 'bomb' ? 4.5 : 3);
   if (pr.kind === 'bomb') SFX.boom(); else SFX.fire();
-  pr.pierce = 0;
 }
 function updateProjs(dt) {
   for (const pr of G.projs) {
@@ -2206,7 +2218,9 @@ function updateProjs(dt) {
       if (!mobHittable(m) || pr.hits.has(m)) continue;
       if (overlap(pr.x - pr.hw, pr.y - pr.hh, pr.x + pr.hw, pr.y + pr.hh, m.x - m.d.w / 2, m.y - m.d.h, m.x + m.d.w / 2, m.y)) {
         if (pr.aoe) { explode(pr); break; }
-        pr.hits.add(m); pr.pierce--; hitMonster(m, pr.mult, pr.dir);
+        pr.hits.add(m); pr.pierce--;
+        if (pr.cos) { burst(pr.x + pr.dir * 8, pr.y, 5, ['#fff', '#ffe9a8'], 160); continue; }   // 其他玩家的投射物：碰到怪物只有特效，不造成傷害
+        hitMonster(m, pr.mult, pr.dir);
         if (pr.kind === 'wind' || pr.kind === 'bigarrow') addShake(2);
       }
     }
@@ -2264,7 +2278,13 @@ function updateFx(dt) {
   G.texts = G.texts.filter(t => t.t < t.life);
   for (const t of G.toasts) t.t += dt;
   G.toasts = G.toasts.filter(t => t.t < 3);
-  for (const f of G.fxs) { f.t += dt; if (f.type === 'whirl' || f.type === 'aura') { f.x = G.player.x; f.y = f.type === 'aura' ? G.player.y : G.player.y - 28; } }
+  for (const f of G.fxs) {
+    f.t += dt;
+    if (f.type === 'whirl' || f.type === 'aura') {   // 跟著施放的人移動（rid = 其他玩家）
+      const o = f.rid ? NET.others.get(f.rid) : G.player;
+      if (o) { f.x = o.x; f.y = f.type === 'aura' ? o.y : o.y - 28; }
+    }
+  }
   G.fxs = G.fxs.filter(f => f.t < f.life);
   G.lvlFx = Math.max(0, G.lvlFx - dt);
   if (G.banner) { G.banner.t += dt; if (G.banner.t > G.banner.life) G.banner = null; }
@@ -2888,14 +2908,7 @@ function drawPlayer() {
   drawHero(p);
   ctx.restore();
   ctx.filter = 'none';
-  if (p.dead && p.deadT > 0.4) {
-    const k = Math.min(1, (p.deadT - 0.4) / 1.2);
-    ctx.save(); ctx.globalAlpha = 0.7 * (1 - k * 0.4);
-    const gx = p.x + Math.sin(G.time * 3) * 4, gy = p.y - 30 - k * 40;
-    shape('rgba(220,240,255,.9)', () => { ctx.moveTo(gx - 8, gy + 8); ctx.quadraticCurveTo(gx - 10, gy - 12, gx, gy - 12); ctx.quadraticCurveTo(gx + 10, gy - 12, gx + 8, gy + 8); ctx.lineTo(gx + 3, gy + 4); ctx.lineTo(gx, gy + 9); ctx.lineTo(gx - 3, gy + 4); ctx.closePath(); }, 1.5, '#7a9ab8');
-    ctx.fillStyle = OUT; ctx.fillRect(gx - 4, gy - 4, 2, 3); ctx.fillRect(gx + 2, gy - 4, 2, 3);
-    ctx.restore();
-  }
+  if (p.dead) drawGhost(p.x, p.y, p.deadT);
   ctx.save();
   ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'center';
   const name = myName(), nw = ctx.measureText(name).width + 10;   // 登入後顯示帳號名稱（和別人看到的一樣）
@@ -4428,6 +4441,7 @@ const NET = {
   cursor: 0, joined: false, seen: new Set(), log: [], logT: -1e9, logH: 0,
   timer: null, nextAt: 0, busy: false, fails: 0, lastReq: 0, off: null, delay: NET_INTERP, sentSig: '', changeAt: 0,
   an: 0, ak: '', ad: 0, lastAtkT: 0,          // 自己的攻擊序號／種類／動作長度（別人用序號變化來重播攻擊動作）
+  ev: [],                                     // 等待送出的特效事件（技能、遠程攻擊、受傷；只走即時連線，附在下一次狀態回報）
   em: -1, en: 0, emT: 0, emCD: 0,             // 自己的表情
   bub: null, bubT: 0,                         // 自己頭上的聊天泡泡
   card: 0, chatOpen: false, sending: false, winSig: '', hudRect: null,
@@ -4446,14 +4460,22 @@ function netReset(mode) {
 }
 // 自己目前的動作狀態（攻擊動作另外用攻擊序號傳送）
 function baseState(p) { return p.dead ? 'dead' : p.rope ? 'climb' : p.prone ? 'prone' : !p.onGround ? 'jump' : Math.abs(p.vx) > 20 ? 'walk' : 'idle'; }
-function netSig(p) { return [Math.round(p.x / 6), Math.round(p.y / 6), p.face, baseState(p), NET.an, NET.en, p.lv, p.job].join(); }
+function netSig(p) { return [Math.round(p.x / 6), Math.round(p.y / 6), p.face, baseState(p), NET.an, NET.en, p.lv, p.job, hpPct(p)].join(); }
+// HP 百分比（還活著時至少 1，別人看到的 HP 條才不會像死掉一樣空掉）
+function hpPct(p) { return p.hp <= 0 ? 0 : clamp(Math.round(p.hp / Math.max(1, p.maxHp) * 100), 1, 100); }
+// 特效事件（格式見 worker/src/fx.js）：即時連線時才記錄，附在下一次狀態回報送出；伺服器只轉給附近的玩家，純裝飾
+function netFx(e) {
+  if (!rtLive()) return;
+  NET.ev.push(e);
+  if (NET.ev.length > 8) NET.ev.splice(0, NET.ev.length - 8);
+}
 // 自己的狀態（HTTP 回報與即時連線共用的格式）
 function netState(p) {
   const eq = {};
   for (const k of SLOT_ORDER) if (p.equip[k]) eq[k] = [p.equip[k].b, p.equip[k].r];
   NET.sentSig = netSig(p);
   return { x: Math.round(p.x), y: Math.round(p.y), f: p.face, st: baseState(p), ak: NET.ak, ad: NET.ad, an: NET.an,
-    job: p.job, lv: p.lv, eq, em: NET.emT > 0 ? NET.em : -1, en: NET.en };
+    job: p.job, lv: p.lv, eq, em: NET.emT > 0 ? NET.em : -1, en: NET.en, hp: hpPct(p) };
 }
 function netBody() {
   return Object.assign(netState(G.player), { ch: NET.want || NET.ch, sw: !!NET.want, after: NET.joined ? NET.cursor : 0 });
@@ -4538,7 +4560,8 @@ function netPlayer(q) {
   const id = n0(q.id), x = +q.x, y = +q.y, ts = +q.ts;
   if (!id || id === NET.me || !isFinite(x) || !isFinite(y) || !isFinite(ts)) return 0;
   let R = NET.others.get(id);
-  if (!R) { R = { id, snaps: [], lastTs: 0, x, y, f: 1, st: 'idle', anim: 0, an0: null, atkT: 0, atkDur: 0.3, atkKind: '', em: -1, en: null, emT: 0, bub: null, bubT: 0, equip: {} }; NET.others.set(id, R); }
+  if (!R) { R = { id, snaps: [], lastTs: 0, x, y, f: 1, st: 'idle', anim: 0, an0: null, atkT: 0, atkDur: 0.3, atkKind: '', em: -1, en: null, emT: 0, bub: null, bubT: 0, equip: {},
+    hp: -1, hurtT: 0, inv: 0, deadT: 0, evT: 0 }; NET.others.set(id, R); }
   R.name = netText(q.name, 12) || '？';
   R.job = JOBS[q.job] ? q.job : 'novice';
   R.lv = clamp(n0(q.lv) || 1, 1, 200);
@@ -4550,7 +4573,8 @@ function netPlayer(q) {
   if (ts > R.lastTs) {
     R.lastTs = ts;
     R.snaps.push({ t: ts - NET.off, x: clamp(x, 0, WORLD_W), y: clamp(y, 0, WORLD_H), f: q.f === -1 ? -1 : 1, st: NET_STATES.includes(q.st) ? q.st : 'idle',
-      an: n0(q.an), ak: NET_ACTS.includes(q.ak) ? q.ak : 'melee', ad: clamp(+q.ad || 0.3, 0.1, 1.5) });
+      an: n0(q.an), ak: NET_ACTS.includes(q.ak) ? q.ak : 'melee', ad: clamp(+q.ad || 0.3, 0.1, 1.5),
+      hp: Number.isInteger(q.hp) ? clamp(q.hp, 0, 100) : -1, ev: Array.isArray(q.e) && q.e.length ? q.e.slice(0, 12) : null });
     if (R.snaps.length > 12) R.snaps.splice(0, R.snaps.length - 12);
   }
   // 表情：序號變了而且開始不到 3 秒才顯示（剛看到這位玩家時也一樣）
@@ -4582,7 +4606,16 @@ function netFrame(dt) {
       if (a === S[S.length - 1] && rt > a.t + 80 && a.st !== 'idle' && a.st !== 'dead' && netNow() - a.t < 3000) starve = true;   // 下一筆還沒到
     }
     const dy = y - R.y;
-    R.x = x; R.y = y; R.st = a.st;
+    R.x = x; R.y = y; R.st = a.st; R.hp = a.hp;
+    // 特效事件：內插播放到那一筆回報時才播放（和攻擊動作同步）；太舊的（例如分頁切回來）就不播了
+    for (const q of S) {
+      if (q.t > rt) break;
+      if (!q.ev || q.t <= R.evT) continue;
+      R.evT = q.t;
+      if (q.t > rt - 1000) for (const e of q.ev) rfxPlay(R, e);
+    }
+    R.hurtT = Math.max(0, R.hurtT - dt); R.inv = Math.max(0, R.inv - dt);
+    R.deadT = R.st === 'dead' ? R.deadT + dt : 0;
     if (R.an0 === null) R.an0 = a.an;
     else if (a.an !== R.an0) { R.an0 = a.an; R.atkT = R.atkDur = a.ad; R.atkKind = a.ak; }   // 攻擊序號變了：重播一次攻擊動作
     if (R.atkT > 0) R.atkT = Math.max(0, R.atkT - dt);
@@ -4651,7 +4684,12 @@ function rtTick(p) {
       if (RT.ticket && now - RT.ticketAt <= RT_TICKET_REUSE) rtOpen(NET.want, true);
       else if (!RT.tkBusy) rtFetchTicket();
     }
-    if (netSig(p) !== NET.sentSig && now - RT.sentAt >= RT_SEND_MS - 5) { RT.sentAt = now; rtSend({ t: 's', ...netState(p) }); }
+    if ((netSig(p) !== NET.sentSig || NET.ev.length) && now - RT.sentAt >= RT_SEND_MS - 5) {
+      RT.sentAt = now;
+      const m = { t: 's', ...netState(p) };
+      if (NET.ev.length) m.e = NET.ev.splice(0, 6);
+      rtSend(m);
+    }
     if (now - RT.pingAt > RT_PING_MS) { RT.pingAt = now; rtSend('ping'); }
     else if (RT.pingAt > RT.pongAt && now - RT.pingAt > RT_PONG_WAIT) { RT.pongAt = now; try { RT.ws.ws.close(); } catch (e) {} }   // 沒有回應：斷線重連
     netLater(RT_SEND_MS); return true;
@@ -4761,7 +4799,7 @@ function rtWelcome(S, m) {
   S.mobs = n0(m.mobs) === MN_PROTO && m.msig === mnSigLocal();
   MN.mobs.clear(); MN.hq = [];   // 換頻道：等新頻道的快照
   if (n0(m.mobs) && !S.mobs) console.warn('[mistwood] 伺服器怪物版本不同，改用本機怪物', m.mobs, m.msig, mnSigLocal());
-  NET.transport = 'ws'; NET.sentSig = '';
+  NET.transport = 'ws'; NET.sentSig = ''; NET.ev = [];   // 斷線期間的特效事件已經過時
   if (n0(m.ch) !== NET.ch) NET.seen.clear();   // 各頻道的聊天編號各自遞增：換頻道時重新記錄
   netApply({ ch: m.ch, nch: m.nch, cap: m.cap, online: m.online, total: m.total, chans: m.chans, me: m.me, now: m.now,
     players: m.players, chat: m.chat, cursor: 0 }, false);
@@ -4817,7 +4855,7 @@ function rtRequest(obj, ms = 6000) {
 // 伺服器 → 前端：
 //   {t:'m', n, u:[[id, x, y, 旗標, hp, 招式, 招式剩餘(1/100 秒)], ...], g:[離開範圍的 id], e:[[id, 事件, ...]]}
 //     旗標：1 面向左、2 在地上、4 追擊中、8 走路中、16 仇恨中、32 緩速中、64 死亡、128 剛重生
-//     招式：MN_ACTS 的索引；事件：1 丟雪球（目標 x, y）、2 震地、3 開始衝撞、4 開始俯衝
+//     招式：MN_ACTS 的索引；事件：1 丟雪球（目標 x, y）、2 震地、3 開始衝撞、4 開始俯衝、5 其他玩家打中（傷害, 爆擊?1:0）
 //   {t:'k', id, x: 分到的經驗值, l: 1 = 最後一擊}   有出力的玩家才會收到：前端給經驗、金幣、任務擊殺數並擲個人掉寶
 // 前端 → 伺服器：{t:'h', h:[[id, 傷害, 方向, 爆擊?1:0, 緩速秒數?], ...]}
 const MN_PROTO = 1;
@@ -4901,6 +4939,10 @@ function mnEvent(e) {
   else if (k === 2) monsterSlam(m);
   else if (k === 3) SFX.charge();
   else if (k === 4) SFX.dive();
+  else if (k === 5) {   // 其他玩家打中這隻怪：顯示傷害數字（HP 由快照更新）
+    const dmg = n0(e[2]);
+    if (dmg > 0 && !m.dead && SETTINGS.others) { mobDmgText(m, Math.min(dmg, 999999), e[3] === 1, true); m.flash = Math.max(m.flash, 0.08); m.barT = 5; }
+  }
 }
 // 擊殺結算（有出力的人才會收到）：經驗值依傷害比例、任務擊殺數、個人掉寶
 function mnKill(msg) {
@@ -5064,20 +5106,108 @@ function renderCard() {
   el.classList.add('show');
 }
 
+// ---- 其他玩家的特效（技能、遠程攻擊、受傷）：只有畫面，不會打到任何怪物，也不播音效 ----
+// 事件格式見 worker/src/fx.js：['k', 技能, 方向, x, y, 目標座標...]／['a', 方向, x, y, 趴下]／['d', 傷害]
+const rnum = (v, a, b) => { v = +v; return isFinite(v) ? clamp(v, a, b) : null; };
+function rproj(o) { fireProj(Object.assign({ cos: true, mult: 0 }, o)); }
+function rfxPlay(R, e) {
+  if (!Array.isArray(e) || !SETTINGS.others || !G.player) return;
+  const p = G.player;
+  if (zoneL(R.x) !== zoneL(p.x) || Math.abs(R.x - p.x) > VIEW_W * 1.5) return;   // 看不到的地方不用播
+  if (e[0] === 'd') {
+    const dmg = rnum(e[1], 0, 999999);
+    if (dmg === null) return;
+    R.hurtT = 0.28; R.inv = 1.0;
+    ftext(R.x, R.y - (R.st === 'prone' ? 34 : 64), String(Math.round(dmg)), '#c58bff', 20, '#22083a', 1.0);
+    burst(R.x, R.y - 28, 5, ['#ffffff', '#c58bff'], 160);
+    return;
+  }
+  const f = e[0] === 'k' ? e[2] : e[1], dir = f === -1 ? -1 : 1;
+  const x = rnum(e[0] === 'k' ? e[3] : e[2], 0, WORLD_W), y = rnum(e[0] === 'k' ? e[4] : e[3], -400, WORLD_H);
+  if (x === null || y === null || Math.abs(x - R.x) > 600) return;
+  if (e[0] === 'a') {   // 遠程職業的普通攻擊
+    const A = JOBS[R.job].atk;
+    if (A.type === 'melee') return;
+    const yy = e[4] === 1 ? y - 9 : y - 28;
+    later(0.07, () => rproj({ kind: A.proj, x: x + dir * 20, y: yy, dir, speed: A.speed, range: A.range, hw: A.proj === 'arrow' ? 18 : 14, hh: A.proj === 'arrow' ? 8 : 12 }));
+    return;
+  }
+  if (e[0] !== 'k') return;
+  const id = e[1], S = typeof id === 'string' && Object.hasOwn(SKILLS, id) ? SKILLS[id] : null;
+  if (!S || !S.cast || !RFX[S.cast]) return;
+  const pts = [];
+  for (let i = 5; i + 1 < Math.min(e.length, 13); i += 2) {
+    const px = rnum(e[i], 0, WORLD_W), py = rnum(e[i + 1], -400, WORLD_H);
+    if (px !== null && py !== null) pts.push([px, py]);
+  }
+  RFX[S.cast]({ R, x, y, f: dir, pts, S });
+}
+// 每個技能的畫面（和 CAST 相同的特效，但沒有命中判定）
+const RFX = {
+  wind(o) { rproj({ kind: 'wind', x: o.x + o.f * 22, y: o.y - 26, dir: o.f, speed: 720, range: 520, pierce: 3, hw: 22, hh: 20 }); },
+  heavy(o) { G.fxs.push({ type: 'slash', x: o.x + o.f * 30, y: o.y - 30, dir: o.f, t: -0.06, life: 0.32, r: 62 }); },
+  spin(o) { G.fxs.push({ type: 'whirl', x: o.x, y: o.y - 28, t: 0, life: 0.5, r: 100, rid: o.R.id }); },
+  double(o) { [0.04, 0.17].forEach((t, i) => later(t, () => rproj({ kind: 'arrow', x: o.x + o.f * 20, y: o.y - 28 - i * 6, dir: o.f, speed: 980, range: 540, hw: 18, hh: 9 }))); },
+  pierce(o) { later(0.1, () => rproj({ kind: 'bigarrow', x: o.x + o.f * 20, y: o.y - 28, dir: o.f, speed: 1100, range: 680, pierce: 6, hw: 24, hh: 12 })); },
+  fire(o) { later(0.08, () => rproj({ kind: 'fire', x: o.x + o.f * 22, y: o.y - 28, dir: o.f, speed: 540, range: 430, hw: 14, hh: 14, aoe: 72 })); },
+  thunder(o) {
+    if (!o.pts.length) G.fxs.push({ type: 'bolt', x: o.x + o.f * 170, y: o.y, t: 0, life: 0.3, seed: Math.random() * 99 });
+    o.pts.slice(0, 4).forEach(([x, y], i) => later(0.06 + i * 0.05, () => G.fxs.push({ type: 'bolt', x, y, t: 0, life: 0.3, seed: Math.random() * 99 })));
+  },
+  kcharge(o) { G.fxs.push({ type: 'dash', x: o.x, y: o.y - 28, dir: o.f, t: 0, life: 0.45, len: 270 }); },
+  kholy(o) {
+    const tx = o.x + o.f * 150, ty = o.y;
+    G.fxs.push({ type: 'skysword', x: tx, y: ty, t: 0, life: 0.75 });
+    later(0.26, () => burst(tx, ty - 10, 18, ['#ffffff', '#fff2a8', '#ffd23e'], 360, 'star', -40));
+  },
+  harrow(o) { G.fxs.push({ type: 'rain', x: o.x + o.f * 230, y: o.y, t: 0, life: 1.0, w: 330, seed: Math.random() * 99 }); },
+  hbomb(o) { later(0.1, () => rproj({ kind: 'bomb', x: o.x + o.f * 20, y: o.y - 28, dir: o.f, speed: 900, range: 560, hw: 18, hh: 12, aoe: 100 })); },
+  wblizz(o) { G.fxs.push({ type: 'blizz', x: o.x + o.f * 210, y: o.y, t: 0, life: 1.05, w: 380, seed: Math.random() * 99 }); },
+  wmeteor(o) {
+    const [tx, ty] = o.pts[0] || [o.x + o.f * 230, o.y];
+    G.fxs.push({ type: 'meteor', x: tx, y: ty, dir: o.f, t: 0, life: 0.48 });
+    later(0.46, () => {
+      G.fxs.push({ type: 'boom', x: tx, y: ty - 30, t: 0, life: 0.5, r: 150 });
+      burst(tx, ty - 20, 22, ['#fff3a6', '#ffb23e', '#ff5a36', '#7a2a0a'], 420, 'spark');
+    });
+  },
+  buff(o) {
+    const R = o.R, S = o.S;
+    G.fxs.push({ type: 'aura', x: R.x, y: R.y, t: 0, life: 0.8, col: S.col, rid: R.id });
+    burst(R.x, R.y - 30, 12, ['#ffffff', S.col], 200, 'star', -100);
+    ftext(R.x, R.y - 74, S.name, S.col, 15, '#2b1d07', 1.0, { small: true });
+  },
+};
+// 死掉時飄起來的小幽靈（自己和其他玩家共用）
+function drawGhost(x, y, deadT) {
+  if (deadT <= 0.4) return;
+  const k = Math.min(1, (deadT - 0.4) / 1.2);
+  ctx.save(); ctx.globalAlpha = 0.7 * (1 - k * 0.4);
+  const gx = x + Math.sin(G.time * 3) * 4, gy = y - 30 - k * 40;
+  shape('rgba(220,240,255,.9)', () => { ctx.moveTo(gx - 8, gy + 8); ctx.quadraticCurveTo(gx - 10, gy - 12, gx, gy - 12); ctx.quadraticCurveTo(gx + 10, gy - 12, gx + 8, gy + 8); ctx.lineTo(gx + 3, gy + 4); ctx.lineTo(gx, gy + 9); ctx.lineTo(gx - 3, gy + 4); ctx.closePath(); }, 1.5, '#7a9ab8');
+  ctx.fillStyle = OUT; ctx.fillRect(gx - 4, gy - 4, 2, 3); ctx.fillRect(gx + 2, gy - 4, 2, 3);
+  ctx.restore();
+}
+
 // ---- 繪製：其他玩家、表情、聊天泡泡、頻道資訊、聊天紀錄 ----
 function drawRemotes() {
   if (!SETTINGS.others) return;
   const cx = G.cam.x;
   for (const R of NET.others.values()) {
     if (!R.snaps.length || R.x < cx - 80 || R.x > cx + VIEW_W + 80) continue;
-    const st = R.st, o = { job: R.job, anim: R.anim, x: R.x, equip: R.equip, atkT: R.atkT, atkDur: R.atkDur || 0.3, atkKind: R.atkKind, hurtT: 0,
+    const st = R.st, o = { job: R.job, anim: R.anim, x: R.x, equip: R.equip, atkT: R.atkT, atkDur: R.atkDur || 0.3, atkKind: R.atkKind, hurtT: R.hurtT,
       onGround: st !== 'jump' && st !== 'climb', vx: st === 'walk' ? 100 : 0, rope: st === 'climb' ? 1 : null, prone: st === 'prone', dead: false };
     ctx.save(); ctx.translate(R.x, R.y);
-    if (o.onGround) { ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(0, 0, 14, 3.5, 0, 0, Math.PI * 2); ctx.fill(); }
-    if (st === 'dead') { ctx.globalAlpha = 0.55; ctx.rotate(-R.f * Math.PI / 2); ctx.translate(0, 4); }
+    if (o.onGround && st !== 'dead') { ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(0, 0, 14, 3.5, 0, 0, Math.PI * 2); ctx.fill(); }
+    if (st === 'dead') {   // 和自己死掉時一樣：倒下、變灰，頭上飄出小幽靈
+      const k = Math.min(1, R.deadT * 3);
+      ctx.globalAlpha = 0.75; ctx.rotate(-R.f * Math.PI / 2 * k); ctx.translate(0, k * 4); ctx.filter = 'grayscale(0.7)';
+    } else if (R.inv > 0 && Math.floor(R.inv * 14) % 2 === 0) ctx.globalAlpha = 0.45;   // 剛被打：閃爍
     ctx.scale(R.f, 1);
     drawHero(o);
     ctx.restore();
+    ctx.filter = 'none';
+    if (st === 'dead') drawGhost(R.x, R.y, R.deadT);
     // 名牌：名稱＋等級與職業
     ctx.save(); ctx.textAlign = 'center';
     ctx.font = `700 11px ${FONT}`;
@@ -5089,6 +5219,11 @@ function drawRemotes() {
     const sw = ctx.measureText(sub).width + 8;
     ctx.fillStyle = 'rgba(14,23,20,.6)'; ctx.beginPath(); rr(R.x - sw / 2, R.y + 20, sw, 12, 3); ctx.fill();
     ctx.fillStyle = '#bfd3c4'; ctx.fillText(sub, R.x, R.y + 29.5);
+    if (R.hp >= 0) {   // HP 條（新版前端才有回報）
+      const bw = 34, bx = R.x - bw / 2, by = R.y + 35, k = R.hp / 100;
+      ctx.fillStyle = 'rgba(14,23,20,.75)'; ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
+      ctx.fillStyle = k > 0.5 ? '#5fd36a' : k > 0.25 ? '#f0c24f' : '#ff5a4a'; ctx.fillRect(bx, by, bw * k, 3);
+    }
     if (NET.card === R.id) { ctx.strokeStyle = '#6ab8ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(R.x, R.y, 20, 5, 0, 0, Math.PI * 2); ctx.stroke(); }
     ctx.restore();
   }
