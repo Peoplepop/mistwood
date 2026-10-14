@@ -29,7 +29,7 @@
 |---|---|---|
 | 6-0 準備 | `worker/` 專案骨架（wrangler）、PA 新增 `POST /api/rt-ticket`、本機 `wrangler dev` 連線打通 | 註冊 Cloudflare、`npx wrangler login` |
 | 6-1 連線層 | 玩家位置與聊天改走 WebSocket，保留 HTTP 備援；訪客不再看到其他玩家 | PA `git pull` + Reload；部署 Worker |
-| 6-2 一般怪同步 | 伺服器權威怪物、命中驗證、擊殺結算（經驗依傷害比例、個人掉寶、任務計數） | 部署、一起實測 |
+| 6-2 一般怪同步 | 伺服器權威怪物、命中驗證、擊殺結算（經驗依傷害比例、個人掉寶、任務計數） | 部署、一起實測（2026-10-14 本機完成，待部署） |
 | 6-3 Boss 同步 | 霧之守衛 AI 搬到伺服器、全頻道共鬥、HP 依人數加成 | 部署 |
 
 ## 進度
@@ -39,6 +39,29 @@
   - PA 後端：`POST /api/rt-ticket`（HMAC-SHA256，5 分鐘，內容 uid／name／lv／lvmax／job／iat／exp；未設定 `MISTWOOD_RT_SECRET` 回 503）＋ pytest。
   - 前端：登入玩家優先走 WebSocket，連不上自動退回 HTTP 輪詢；訪客不再看到其他玩家、不再輪詢；`RT_URL_PROD` 已設為 `wss://mistwood-rt.b98010327.workers.dev`（2026-10-13 部署並經使用者雙帳號實測通過）。
   - 已部署：Worker `mistwood-rt.b98010327.workers.dev`、PA 已設 `MISTWOOD_RT_SECRET`（密鑰本機備份在 repo 外 `D:\claude\小k\mistwood_rt_secret.txt`）。
-- 6-2 一般怪同步：尚未開始。
+- **2026-10-14 完成 6-2 一般怪同步（本機驗證通過，Worker 尚未部署）**
+  - 共用程式碼：`index.html` 裡標記 `// <mobsim>` … `// </mobsim>` 的區塊（世界常數、`MONSTERS`／`PLATFORMS`／`SPAWNS`、`makeMonster`、`mobStep`／`monsterAct`／`updateFlyer` 等 AI）由 `worker/scripts/gen-mobs.mjs`（`npm run gen`）抽成 `worker/src/mobs.gen.js`；`npm test` 會檢查是否已更新。AI 的特效／音效改成 `fx(m, 種類, 目標)` 回呼，單機版播特效，伺服器改成事件送給前端。
+  - Worker：`src/mobworld.js`（可單獨測試）＋ `Channel` 的 10 Hz tick。只模擬「活躍玩家」（2 分鐘內有動作）左右 1700 內的怪；沒有活躍玩家 5 秒後停止 tick、把怪物狀態存進 storage，讓物件休眠。每位玩家只收左右 1500 內、同一張地圖、**有變化**的怪（整數座標＋旗標）。
+  - 命中 `{t:'h'}`：伺服器檢查怪物存在且活著（剛重生淡入中不能打）、玩家沒死、同一張地圖且距離 900／450 內、傷害上限（依狀態中的等級／職業，`maxHit`，約為實際上限的 2 倍）、令牌桶 48 次／每秒補 24 次。
+  - 擊殺 `{t:'k', id, x, l}` 只送給有出力的人：經驗值依傷害比例（多人時最後一擊另加 10%，總和等於原本的經驗值）；前端收到後給經驗、金幣、擊殺數、任務擊殺數，並各自擲個人掉寶。
+  - 前端：Worker 的 welcome 帶 `mobs: 1` 且怪物資料指紋 `msig` 相同才啟用伺服器怪物；否則（舊版 Worker、HTTP 備援、斷線、訪客）一律用本機單機怪物，斷線時看得到的怪原地改回本機 AI。伺服器怪物用 0.15 秒緩衝內插；打怪的傷害數字、閃白、HP 條立即顯示（伺服器 1 秒內沒確認就恢復）。被怪打的傷害、雪球、震波仍在前端依伺服器的怪物位置與事件判定。Boss（霧之守衛）維持本機（6-3）。
+  - 後端（PythonAnywhere）不用改：分經驗後每隻怪給的經驗只會更少，金幣／擊殺數的合理性檢查仍成立。
+  - 驗證：`npm test` 19 項通過；本機 `wrangler dev` ＋ Flask ＋ 兩個瀏覽器分頁（兩個測試帳號）同頻道：兩邊看到的怪物位置與 HP 相同、合力打死石甲怪經驗 10／20 分配（合計 30）、只有出力者收到結算、雪人丟雪球／巨像震地／蝙蝠俯衝的預兆與事件正常、斷線自動改回本機怪物並在重連後切回、Worker 不支援時維持本機怪物、`?rt=off` 單機正常。
 
-前端在 Worker 正式上線前，同步功能預設關閉（只在 `?rt=` 參數或設定了正式 Worker 網址時啟用），避免 GitHub Pages 先上線卻連不到伺服器。
+### 6-2 部署步驟（使用者）
+
+GitHub Pages 上的新前端在 Worker 更新前會繼續使用本機怪物（舊 Worker 的 welcome 沒有 `mobs`），所以前端先上線沒有問題。
+
+```bash
+cd worker
+git pull
+npm install
+npm test                 # 19 項通過
+npx wrangler deploy      # npm run deploy 也可以（會先檢查 mobs.gen.js 是否最新）
+```
+
+部署後登入遊戲，社群視窗（C）顯示「連線方式：即時連線（WebSocket，怪物同步）」就是成功了；可以兩個帳號一起打同一隻怪確認經驗分配。
+緊急關閉：把 `worker/src/channel.js` 的 `MOB_SYNC` 改成 `false` 再部署（前端自動改回本機怪物）。
+
+**之後修改怪物資料或 AI（`<mobsim>` 區塊）時**：在 `worker` 執行 `npm run gen`，commit 產生的 `src/mobs.gen.js`，並重新部署 Worker。
+在 Worker 重新部署前，前端會因為怪物資料指紋不同而自動改用本機怪物（不會壞掉，只是暫時沒有怪物同步）。
