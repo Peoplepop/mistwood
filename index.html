@@ -1851,22 +1851,23 @@ function makeMonster(sp) {
   }
   else { minX = plat.x + d.w / 2 + 2; maxX = plat.x + plat.w - d.w / 2 - 2; }
   return {
-    sp, type: sp.type, d, x: sp.x, y: d.ai === 'fly' ? plat.y - FLY_H : plat.y, vx: 0, vy: 0, face: Math.random() < 0.5 ? -1 : 1, hp: d.hp,
+    sp, type: sp.type, d, x: sp.x, y: d.ai === 'fly' ? plat.y - FLY_H : plat.y, vx: 0, vy: 0, face: Math.random() < 0.5 ? -1 : 1, hp: d.hp, mhp: d.hp,
     minX, maxX, onGround: d.ai !== 'fly', state: 'walk', t: rand(0.5, 3), flash: 0, stun: 0, barT: 0, aggro: 0, chasing: false,
     dead: false, dying: 0, dyMax: 0.6, respawnT: 0, spawnFx: 0.6, anim: Math.random() * 10, squash: 0, lastSwing: -1, stack: 0, stackT: 0,
     chill: 0, boss: null, act: null, skCD: rand(1, 2.5), fly: null,
   };
 }
-// 重生：回到出生點、補滿 HP（特效由呼叫端處理）
+// 重生：回到出生點、補滿 HP（特效由呼叫端處理）。mhp = 最大 HP（一般怪＝資料的 hp；即時連線的 Boss 會依人數加成）
 function resetMonster(m) {
   const plat = PLATFORMS[m.sp.plat];
-  Object.assign(m, { x: m.sp.x, y: plat.y, vx: 0, vy: 0, hp: m.d.hp, dead: false, dying: 0, onGround: true, spawnFx: 0.6, flash: 0, stun: 0, barT: 0, aggro: 0, state: 'idle', t: 1, chill: 0, boss: null,
+  Object.assign(m, { x: m.sp.x, y: plat.y, vx: 0, vy: 0, hp: m.d.hp, mhp: m.d.hp, dead: false, dying: 0, onGround: true, spawnFx: 0.6, flash: 0, stun: 0, barT: 0, aggro: 0, state: 'idle', t: 1, chill: 0, boss: null,
     act: null, skCD: rand(1, 2.5), fly: null });
   if (m.d.ai === 'fly') { m.y = flyHome(m); m.onGround = false; }
 }
 // 怪物資料的指紋：前端與伺服器不同（例如改了出生點但 Worker 還沒重新部署）時，前端不使用伺服器的怪物
-function mobSig() {
-  const t = JSON.stringify([SPAWNS, MONSTERS, PLATFORMS, MSKILL]);
+function mobSig() { return sigOf([SPAWNS, MONSTERS, PLATFORMS, MSKILL]); }
+function sigOf(v) {
+  const t = JSON.stringify(v);
   let h = 2166136261;
   for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);
@@ -2024,7 +2025,7 @@ function updateFlyer(m, dt, p, fx) {
 
 // ---- 單機版（以及即時連線時的 Boss）：每一步更新一隻怪物 ----
 function updateMonster(m, dt) {
-  if (mnOwns(m)) { if (!m.dead && !m.hide) monsterTouch(m); return; }   // 伺服器的怪物：位置在 mnFrame 內插，這裡只判定碰撞傷害
+  if (mnOwns(m)) { if (!m.dead && !m.hide) { if (m.d.boss) bossTouch(m); else monsterTouch(m); } return; }   // 伺服器的怪物：位置在 mnFrame 內插，這裡只判定碰撞傷害
   if (m.dead) {
     if (m.dying > 0) m.dying -= dt;
     else { m.respawnT -= dt; if (m.respawnT <= 0) respawnMonster(m); }
@@ -2071,60 +2072,59 @@ function monsterSlam(m) {
 
 // ================= 更新：Boss（霧之守衛） =================
 // 招式：衝撞（charge）、震地震波（slam）、霧彈齊射（volley）；出招前會有預兆（tele），HP 剩一半時狂暴化（phase 2）
-const BOSS = { charge: 640, waveSpd: 430, waveLen: 600, orbSpd: 300, leash: 6 };
-function bossInit(m) { m.boss = { st: 'idle', t: 2, phase: 1, away: 0, tele: null, teleMax: 1, rep: 0, last: '' }; }
-function bossEngaged() { const p = G.player; return !!p && !p.dead && p.x > ARENA_X - 30 && p.x < FROST_X; }
-function bossChoose(m) {
-  const p = G.player, B = m.boss, far = Math.abs(p.x - m.x) > 260;
+// AI 在下面的共用區塊（單機版與即時連線伺服器共用，第六階段 6-3）：
+//   單機：updateBoss → bossStep(m, dt, G.player, inArena(G.player), bossFx)
+//   伺服器：worker/src/mobworld.js 用同一份 bossStep，目標換成祭壇內的某位玩家、eng = 祭壇內有沒有活著的玩家，
+//           特效與招式改成事件送給前端（震波、霧彈由每位玩家的前端各自產生，並判定有沒有打中自己）。
+// fx(m, 種類, e)：'warn' 開始預兆、'charge' 開始衝撞、'chargep' 衝撞中的粒子、'chargeEnd' 衝撞結束、'wave' 震波（e.ph2）、
+//   'orb' 一顆霧彈（e.ox, e.oy 起點、e.a 角度、e.spd 速度）、'enrage' 狂暴化、'reset' 玩家離開太久而回復全部體力
+// m.mhp = 最大 HP（單機 = 資料的 hp；即時連線時伺服器依人數加成）
+// <mobsim>
+const BOSS = { ver: 1, charge: 640, waveSpd: 430, waveLen: 600, orbSpd: 300, leash: 6 };   // ver：Boss 的 AI 有改就 +1（前端與伺服器不同時 Boss 改回本機）
+const inArena = p => !!p && !p.dead && p.x > ARENA_X - 30 && p.x < FROST_X;   // 活著而且在祭壇內（Boss 會注意到）
+function bossInit(m) { m.boss = { st: 'idle', t: 2, phase: 1, away: 0, tele: null, teleMax: 1, rep: 0, last: '', q: [] }; }
+// Boss 資料的指紋（即時連線時前端與伺服器不同就不使用伺服器的 Boss）
+function bossSig() { return sigOf([BOSS, MONSTERS.guardian, SPAWNS.filter(s => MONSTERS[s.type].boss)]); }
+function bossChoose(m, p, fx) {
+  const B = m.boss, far = Math.abs(p.x - m.x) > 260;
   let opts = (far ? ['charge', 'volley', 'charge', 'slam'] : ['slam', 'slam', 'volley', 'charge']).filter(o => o !== B.last);
   const a = pick(opts);
   B.last = a; B.st = 'tele'; B.tele = a;
   B.t = B.teleMax = (a === 'charge' ? 0.85 : a === 'slam' ? 0.95 : 0.75) / (B.phase === 2 ? 1.3 : 1);
   B.rep = a === 'charge' && B.phase === 2 ? 2 : 1;
   m.face = p.x < m.x ? -1 : 1; m.vx = 0;
-  SFX.warn();
+  fx(m, 'warn', p);
 }
-function bossAct(m) {
-  const B = m.boss, d = m.d, p = G.player, ph2 = B.phase === 2;
-  if (B.tele === 'charge') { B.st = 'charge'; B.t = 0.95; SFX.charge(); }
+function bossAct(m, p, fx) {
+  const B = m.boss, ph2 = B.phase === 2;
+  if (B.tele === 'charge') { B.st = 'charge'; B.t = 0.95; fx(m, 'charge', p); }
   else if (B.tele === 'slam') {
     B.st = 'recover'; B.t = 0.85;
-    const wave = () => {
-      if (m.dead) return;
-      addShake(9); SFX.slam();
-      burst(m.x, m.y - 4, 22, ['#c9b8ff', '#e8e4f0', '#8a7ad8'], 300, 'dot', 500);
-      for (const dir of [-1, 1]) G.hazards.push({ type: 'wave', x: m.x + dir * 50, dir, dist: 0, max: BOSS.waveLen, spd: BOSS.waveSpd * (ph2 ? 1.2 : 1), atk: d.atk * 1.05, hit: false, t: 0 });
-    };
-    wave(); if (ph2) later(0.5, wave);
+    fx(m, 'wave', { ph2 });
+    if (ph2) B.q.push({ t: 0.5, k: 'wave', ph2 });   // 狂暴化：0.5 秒後再震一次
   } else if (B.tele === 'volley') {
     B.st = 'recover'; B.t = 1;
     const n = ph2 ? 7 : 5, ox = m.x + m.face * 30, oy = m.y - 96;
     const base = Math.atan2((p.y - 28) - oy, p.x - ox);
-    for (let i = 0; i < n; i++) later(i * 0.09, () => {
-      if (m.dead) return;
-      const a = base + (i - (n - 1) / 2) * 0.17;
-      G.hazards.push({ type: 'orb', x: ox, y: oy, vx: Math.cos(a) * BOSS.orbSpd * (ph2 ? 1.15 : 1), vy: Math.sin(a) * BOSS.orbSpd * (ph2 ? 1.15 : 1), r: 11, atk: d.atk * 0.8, t: 0, life: 3.5 });
-      SFX.magic();
-    });
+    for (let i = 0; i < n; i++) B.q.push({ t: i * 0.09, k: 'orb', ox, oy, a: base + (i - (n - 1) / 2) * 0.17, spd: BOSS.orbSpd * (ph2 ? 1.15 : 1) });
   }
   B.tele = null;
 }
-function updateBoss(m, dt) {
-  const d = m.d, p = G.player;
+// 活著的 Boss 前進 dt 秒（p = 目標玩家 { x, y, dead }；eng = 祭壇內有沒有活著的玩家）
+function bossStep(m, dt, p, eng, fx) {
+  const d = m.d, mhp = m.mhp || d.hp;
   if (!m.boss) bossInit(m);
-  const B = m.boss, eng = bossEngaged();
-  m.anim += dt; m.flash -= dt; m.barT -= dt; m.stackT -= dt; m.chill = 0;
+  let B = m.boss;
+  m.anim += dt; m.chill = 0;
   m.spawnFx = Math.max(0, m.spawnFx - dt);
   // 玩家離開祭壇（或倒下）一段時間：Boss 回復全部體力
   if (!eng) {
     B.away += dt;
-    if (B.away > BOSS.leash && (m.hp < d.hp || B.phase > 1)) { m.hp = d.hp; bossInit(m); toast(`${d.name}恢復了全部體力`, '#d8cfb4'); }
+    if (B.away > BOSS.leash && (m.hp < mhp || B.phase > 1)) { m.hp = mhp; bossInit(m); B = m.boss; fx(m, 'reset', p); }
   } else B.away = 0;
-  if (B.phase === 1 && m.hp <= d.hp / 2) {   // 狂暴化
+  if (B.phase === 1 && m.hp <= mhp / 2) {   // 狂暴化
     B.phase = 2; B.st = 'roar'; B.t = 1.3; B.tele = null; m.vx = 0;
-    G.banner = { title: '狂暴化！', sub: `${d.name}被激怒了，攻擊變得更快更猛烈`, t: 0, life: 2.4 };
-    SFX.roar(); addShake(10);
-    burst(m.x, m.y - d.h / 2, 40, ['#ff6a8a', '#c9b8ff', '#ffffff'], 380, 'star', -40);
+    fx(m, 'enrage', p);
   }
   const ph2 = B.phase === 2;
   B.t -= dt;
@@ -2134,7 +2134,7 @@ function updateBoss(m, dt) {
         const dx = p.x - m.x;
         m.face = dx < 0 ? -1 : 1;
         m.vx = Math.abs(dx) > 110 ? m.face * d.speed * (ph2 ? 1.4 : 1) : 0;
-        if (B.t <= 0) bossChoose(m);
+        if (B.t <= 0) bossChoose(m, p, fx);
       } else {   // 走回原位
         const hx = m.sp.x - m.x;
         m.vx = Math.abs(hx) > 6 ? Math.sign(hx) * d.speed : 0;
@@ -2144,14 +2144,14 @@ function updateBoss(m, dt) {
     case 'tele':
       m.vx = 0;
       if (B.tele === 'charge' && eng && B.t > B.teleMax * 0.4) m.face = p.x < m.x ? -1 : 1;   // 預兆前半段仍會轉向玩家
-      if (B.t <= 0) bossAct(m);
+      if (B.t <= 0) bossAct(m, p, fx);
       break;
     case 'charge':
       m.vx = m.face * BOSS.charge * (ph2 ? 1.2 : 1);
-      if (Math.random() < 0.7) G.parts.push({ x: m.x - m.face * 40, y: m.y - rand(0, 10), vx: -m.face * rand(60, 160), vy: rand(-80, -20), t: 0, life: 0.5, color: pick(['#c9b8ff', '#e8dcc0', '#8a84a8']), size: rand(3, 6), type: 'dot', grav: 200 });
+      fx(m, 'chargep', p);
       if (B.t <= 0 || (m.face < 0 && m.x <= m.minX + 1) || (m.face > 0 && m.x >= m.maxX - 1)) {
-        m.vx = 0; addShake(5);
-        if (--B.rep > 0 && eng) { B.st = 'tele'; B.tele = 'charge'; B.t = B.teleMax = 0.5; m.face = p.x < m.x ? -1 : 1; SFX.warn(); }
+        m.vx = 0; fx(m, 'chargeEnd', p);
+        if (--B.rep > 0 && eng) { B.st = 'tele'; B.tele = 'charge'; B.t = B.teleMax = 0.5; m.face = p.x < m.x ? -1 : 1; fx(m, 'warn', p); }
         else { B.st = 'recover'; B.t = 0.75; }
       }
       break;
@@ -2161,11 +2161,54 @@ function updateBoss(m, dt) {
   }
   m.x = clamp(m.x + m.vx * dt, m.minX, m.maxX);
   m.y = GROUND_Y; m.onGround = true;
-  // 接觸傷害（衝撞時更痛）；判定頂端低於祭壇平台，站在平台上不會被碰到
-  if (!p.dead && p.inv <= 0 && m.spawnFx <= 0) {
-    const pw = p.w / 2 - 2, mw = d.w / 2 - 12, ph = p.prone ? 22 : p.h;
-    if (overlap(p.x - pw, p.y - ph + 6, p.x + pw, p.y, m.x - mw, m.y - d.h + 44, m.x + mw, m.y)) hurtPlayerBy(d.atk * (B.st === 'charge' ? 1.4 : 1), m.x);
+  // 延遲的招式：狂暴化的第二次震波、霧彈一顆一顆射出
+  if (B.q.length) {
+    for (const e of B.q) { e.t -= dt; if (e.t <= 0) fx(m, e.k, e); }
+    B.q = B.q.filter(e => e.t > 0);
   }
+}
+// </mobsim>
+// ---- 單機版的 Boss（即時連線、而且 Worker 支援時由伺服器模擬，前端只內插位置並判定自己有沒有被打到） ----
+function updateBoss(m, dt) {
+  m.flash -= dt; m.barT -= dt; m.stackT -= dt;
+  bossStep(m, dt, G.player, inArena(G.player), bossFx);
+  bossTouch(m);
+}
+// 接觸傷害（衝撞時更痛）；判定頂端低於祭壇平台，站在平台上不會被碰到
+function bossTouch(m) {
+  const p = G.player, d = m.d;
+  if (p.dead || p.inv > 0 || m.spawnFx > 0) return;
+  const pw = p.w / 2 - 2, mw = d.w / 2 - 12, ph = p.prone ? 22 : p.h;
+  if (overlap(p.x - pw, p.y - ph + 6, p.x + pw, p.y, m.x - mw, m.y - d.h + 44, m.x + mw, m.y)) hurtPlayerBy(d.atk * (m.boss && m.boss.st === 'charge' ? 1.4 : 1), m.x);
+}
+// Boss 的特效、音效與招式（單機版；即時連線時由伺服器的事件呼叫同樣的函式）
+const bossNear = x => !!G.player && zoneL(G.player.x) === zoneL(x) && Math.abs(G.player.x - x) < 1100;   // 遠處的 Boss 不搖畫面、不播音效
+function bossFx(m, k, e) {
+  const d = m.d;
+  if (k === 'reset') { toast(`${d.name}恢復了全部體力`, '#d8cfb4'); return; }
+  if (k === 'chargep') { if (Math.random() < 0.7) G.parts.push({ x: m.x - m.face * 40, y: m.y - rand(0, 10), vx: -m.face * rand(60, 160), vy: rand(-80, -20), t: 0, life: 0.5, color: pick(['#c9b8ff', '#e8dcc0', '#8a84a8']), size: rand(3, 6), type: 'dot', grav: 200 }); return; }
+  if (k === 'wave') { bossWave(m, m.x, e.ph2); return; }
+  if (k === 'orb') { bossOrb(m, e.ox, e.oy, Math.cos(e.a) * e.spd, Math.sin(e.a) * e.spd); return; }
+  if (!bossNear(m.x)) return;
+  if (k === 'warn') SFX.warn();
+  else if (k === 'charge') SFX.charge();
+  else if (k === 'chargeEnd') addShake(5);
+  else if (k === 'enrage') {
+    G.banner = { title: '狂暴化！', sub: `${d.name}被激怒了，攻擊變得更快更猛烈`, t: 0, life: 2.4 };
+    SFX.roar(); addShake(10);
+    burst(m.x, m.y - d.h / 2, 40, ['#ff6a8a', '#c9b8ff', '#ffffff'], 380, 'star', -40);
+  }
+}
+// 震波：從 x 往左右沿著地面前進（跳起來或站上平台可躲開）
+function bossWave(m, x, ph2) {
+  if (bossNear(x)) { addShake(9); SFX.slam(); }
+  burst(x, GROUND_Y - 4, 22, ['#c9b8ff', '#e8e4f0', '#8a7ad8'], 300, 'dot', 500);
+  for (const dir of [-1, 1]) G.hazards.push({ type: 'wave', x: x + dir * 50, dir, dist: 0, max: BOSS.waveLen, spd: BOSS.waveSpd * (ph2 ? 1.2 : 1), atk: m.d.atk * 1.05, hit: false, t: 0 });
+}
+// 霧彈：從 (ox, oy) 以速度 (vx, vy) 直線飛行
+function bossOrb(m, ox, oy, vx, vy) {
+  G.hazards.push({ type: 'orb', x: ox, y: oy, vx, vy, r: 11, atk: m.d.atk * 0.8, t: 0, life: 3.5 });
+  if (bossNear(ox)) SFX.magic();
 }
 // Boss 的攻擊判定：震波（沿地面前進，跳起來或站上平台可躲開）、霧彈（直線飛行）
 function updateHazards(dt) {
@@ -3467,13 +3510,23 @@ function drawBossTele(m) {
     ctx.fillStyle = `rgba(255,60,60,${0.1 + 0.18 * ph})`; ctx.fillRect(m.x - BOSS.waveLen, GROUND_Y - 34, BOSS.waveLen * 2, 34);
     ctx.strokeStyle = `rgba(255,140,140,${1 - k})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(m.x, GROUND_Y, 40 + k * 120, 8 + k * 16, 0, 0, Math.PI * 2); ctx.stroke();
   } else if (B.tele === 'volley') {
-    const p = G.player;
+    const p = bossTargetOf(m);
+    if (p) {
     ctx.strokeStyle = `rgba(201,184,255,${0.25 + 0.35 * ph})`; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
     ctx.beginPath(); ctx.moveTo(m.x + m.face * 30, m.y - 96); ctx.lineTo(p.x, p.y - 28); ctx.stroke(); ctx.setLineDash([]);
+    }
   }
   ctx.textAlign = 'center';
   outlinedText('!', m.x, m.y - m.d.h - 28 - k * 8, 42, '#ff5a3c', '#3a0a02', 900, 6);
   ctx.restore();
+}
+// Boss 的目標（單機 = 自己；伺服器的 Boss = 快照裡的目標玩家，可能是別人）
+function bossTargetOf(m) {
+  if (!mnOwns(m)) return G.player;
+  if (!m.tg) return null;
+  if (m.tg === NET.me) return G.player;
+  const R = NET.others.get(m.tg);
+  return R && SETTINGS.others ? R : null;
 }
 // Boss 的震波與霧彈
 function drawHazards() {
@@ -3500,10 +3553,10 @@ function drawHazards() {
 // 畫面上方的 Boss 血條（靠近祭壇時顯示）
 function drawBossBar() {
   const p = G.player, m = G.monsters.find(m => m.d.boss);
-  if (!p || !m || m.dead || p.x < ARENA_X - 420 || p.x >= FROST_X) return;
+  if (!p || !m || m.dead || m.hide || p.x < ARENA_X - 420 || p.x >= FROST_X) return;
   const d = m.d, cw = cv.clientWidth || VIEW_W, k = VIEW_W / cw, tb = $('topbtns');
   const x0 = Math.round(((tb && tb.offsetWidth) || 120) * k) + 16 + safeV('l'), x1 = VIEW_W - miniW() - 24 - safeV('r'), bw = Math.max(120, x1 - x0), y = 8, bh = 18;
-  const f = Math.max(0, m.hp / d.hp), ph2 = m.boss && m.boss.phase === 2;
+  const f = clamp(m.hp / (m.mhp || d.hp), 0, 1), ph2 = m.boss && m.boss.phase === 2, nf = mnOwns(m) ? n0(m.nf) : 0;
   ctx.save();
   ctx.fillStyle = 'rgba(14,10,20,.8)'; ctx.beginPath(); rr(x0 - 4, y - 3, bw + 8, bh + 6, 6); ctx.fill();
   ctx.fillStyle = '#3a1020'; ctx.fillRect(x0, y, bw, bh);
@@ -3512,7 +3565,7 @@ function drawBossBar() {
   ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillRect(x0, y, bw * f, 3);
   ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(x0 + bw / 2 - 1, y - 2, 2, bh + 4);   // 50%：狂暴化
   ctx.strokeStyle = ph2 ? '#ff9ab0' : '#c9b8ff'; ctx.lineWidth = 1.5; ctx.strokeRect(x0, y, bw, bh);
-  ctx.textAlign = 'left'; outlinedText(`Lv.${d.lv} ${d.name}${ph2 ? '（狂暴）' : ''}`, x0 + 6, y + 13.5, 12, '#ffffff', 'rgba(0,0,0,.85)', 800, 3);
+  ctx.textAlign = 'left'; outlinedText(`Lv.${d.lv} ${d.name}${ph2 ? '（狂暴）' : ''}${nf > 1 ? `・${nf} 人共鬥` : ''}`, x0 + 6, y + 13.5, 12, '#ffffff', 'rgba(0,0,0,.85)', 800, 3);
   ctx.textAlign = 'right'; outlinedText(`${(f * 100).toFixed(1)}%`, x0 + bw - 6, y + 13.5, 12, '#ffe9a8', 'rgba(0,0,0,.85)', 800, 3);
   ctx.restore();
 }
@@ -4741,7 +4794,7 @@ function rtOpen(ch, isSwitch) {
   const S = { ws, ch, sw: isSwitch, live: false, mode: NET.mode, err: null, dead: false };
   if (isSwitch) RT.sw = S; else RT.ws = S;
   const timer = setTimeout(() => { if (!S.live) try { ws.close(); } catch (e) {} }, 8000);   // 太久沒有進入頻道
-  ws.onopen = () => { if (G.player) ws.send(JSON.stringify({ t: 'hello', ticket: RT.ticket, s: netState(G.player) })); };
+  ws.onopen = () => { if (G.player) ws.send(JSON.stringify({ t: 'hello', ticket: RT.ticket, s: netState(G.player), ms: mnSigLocal(), bs: mnBossSigLocal() })); };
   ws.onmessage = e => rtMessage(S, e.data);
   ws.onclose = e => { clearTimeout(timer); rtClosed(S, e.code); };
 }
@@ -4797,6 +4850,7 @@ function rtWelcome(S, m) {
   RT.pingAt = RT.pongAt = netNow(); RT.sentAt = 0;
   // 伺服器權威的怪物：Worker 支援同一版協定、怪物資料相同才啟用（舊版 Worker 沒有 mobs 欄位 → 照舊用本機怪物）
   S.mobs = n0(m.mobs) === MN_PROTO && m.msig === mnSigLocal();
+  S.boss = S.mobs && n0(m.boss) === MN_BOSS_PROTO && m.bsig === mnBossSigLocal();   // 6-3：Boss 也由伺服器模擬（舊版 Worker 沒有 boss 欄位 → 本機 Boss）
   MN.mobs.clear(); MN.hq = [];   // 換頻道：等新頻道的快照
   if (n0(m.mobs) && !S.mobs) console.warn('[mistwood] 伺服器怪物版本不同，改用本機怪物', m.mobs, m.msig, mnSigLocal());
   NET.transport = 'ws'; NET.sentSig = ''; NET.ev = [];   // 斷線期間的特效事件已經過時
@@ -4849,14 +4903,18 @@ function rtRequest(obj, ms = 6000) {
   });
 }
 
-// ---- 即時連線：伺服器權威的一般怪物（第六階段 6-2；Boss 仍在本機，6-3 再搬） ----
+// ---- 即時連線：伺服器權威的一般怪物（第六階段 6-2）與 Boss（6-3） ----
 // 只有在 Worker 的 welcome 宣告支援（mobs = MN_PROTO）而且怪物資料指紋相同（msig）時才啟用；
-// 舊版 Worker、HTTP 備援、斷線、訪客 → 一律用本機的單機怪物（和以前完全一樣）。
+// Boss 另外要 welcome 的 boss = MN_BOSS_PROTO 而且 Boss 資料指紋相同（bsig），否則 Boss 仍在本機（一般怪照樣用伺服器的）。
+// 舊版 Worker、HTTP 備援、斷線、訪客 → 一律用本機的單機怪物與 Boss（和以前完全一樣）。
 // 伺服器 → 前端：
 //   {t:'m', n, u:[[id, x, y, 旗標, hp, 招式, 招式剩餘(1/100 秒)], ...], g:[離開範圍的 id], e:[[id, 事件, ...]]}
 //     旗標：1 面向左、2 在地上、4 追擊中、8 走路中、16 仇恨中、32 緩速中、64 死亡、128 剛重生
 //     招式：MN_ACTS 的索引；事件：1 丟雪球（目標 x, y）、2 震地、3 開始衝撞、4 開始俯衝、5 其他玩家打中（傷害, 爆擊?1:0）
-//   {t:'k', id, x: 分到的經驗值, l: 1 = 最後一擊}   有出力的玩家才會收到：前端給經驗、金幣、任務擊殺數並擲個人掉寶
+//     Boss：每筆多 [最大 HP, 階段, 預兆總長(1/100 秒), 人數, 目標玩家 uid]，招式是 MN_BOSS_ACTS 的代碼；
+//       事件：6 震波（x, 狂暴?1:0）、7 霧彈（x, y, vx, vy）、8 狂暴化、9 回復全部體力、10 開始預兆、11 開始衝撞、12 衝撞結束
+//   {t:'k', id, x: 分到的經驗值, l: 1 = 最後一擊, c?, n?}   有出力的玩家才會收到：前端給經驗、金幣、任務擊殺數並擲個人掉寶
+//     Boss：c = 1 算討伐（Boss 擊殺數、任務、個人 Boss 掉寶）、0 = 輸出不到門檻（只有經驗值）；n = 參戰人數
 // 前端 → 伺服器：{t:'h', h:[[id, 傷害, 方向, 爆擊?1:0, 緩速秒數?], ...]}
 const MN_PROTO = 1;
 const MN_DELAY = 150;            // 怪物位置緩衝（毫秒）：顯示約 0.15 秒前的位置，兩筆快照之間平滑內插
@@ -4865,24 +4923,35 @@ const MN_HIT_MS = 50;            // 命中訊息合併送出的最短間隔
 const MN_PRED = 1;               // 自己打出的傷害先顯示，這段時間內伺服器沒有確認就恢復成伺服器的 HP（秒）
 const MN_ACTS = [null, ['dash', 'tele'], ['dash', 'go'], ['dash', 'rec'], ['throw', 'tele'], ['throw', 'go'], ['throw', 'rec'],
   ['slam', 'tele'], ['slam', 'go'], ['slam', 'rec'], ['fly', 'tele'], ['fly', 'dive']];
-const MN = { on: false, mobs: new Map(), hq: [], sentAt: 0, sig: '' };   // mobs：出生點 id → 伺服器的最新狀態與位置緩衝
-const mnOwns = m => MN.on && !m.d.boss;
+const MN_BOSS_PROTO = 1;
+// Boss 的招式代碼 → [狀態, 預兆的招式]
+const MN_BOSS_ACTS = { 12: ['tele', 'charge'], 13: ['tele', 'slam'], 14: ['tele', 'volley'], 15: ['charge', null], 16: ['recover', null], 17: ['roar', null] };
+const MN = { on: false, bo: false, mobs: new Map(), hq: [], sentAt: 0, sig: '', bsig: '' };   // mobs：出生點 id → 伺服器的最新狀態與位置緩衝；bo：Boss 也用伺服器的
+const mnOwns = m => MN.on && (!m.d.boss || MN.bo);
 const mnSigLocal = () => MN.sig || (MN.sig = mobSig());
-// 切換：伺服器怪物 ↔ 本機單機怪物
-function mnSwitch(on) {
-  if (on === MN.on) return;
-  MN.on = on; MN.hq = [];
-  for (const m of G.monsters) {
-    if (m.d.boss) continue;
+const mnBossSigLocal = () => MN.bsig || (MN.bsig = bossSig());
+// 切換：伺服器怪物 ↔ 本機單機怪物（on = 一般怪、bo = Boss）
+function mnSwitch(on, bo) {
+  bo = on && bo;
+  if (on === MN.on && bo === MN.bo) return;
+  const was = G.monsters.map(mnOwns);
+  MN.on = on; MN.bo = bo; MN.hq = [];
+  G.monsters.forEach((m, i) => {
+    const own = mnOwns(m);
+    if (own === was[i]) return;
     m.pend = 0; m.predT = 0;
-    if (on) { m.hide = true; m.net = null; continue; }
+    if (own) { m.hide = true; m.net = null; return; }
     // 改回單機：看得到的怪留在原地繼續用本機 AI，看不到的回出生點重生
     const seen = !m.hide;
     m.hide = false; m.net = null;
     if (!seen) resetMonster(m);
     else if (m.dead) { m.dying = Math.max(0, m.dying); m.respawnT = Math.min(m.d.respawn, 3); }
+    else if (m.d.boss) {   // Boss：血量百分比不變、換回單機的最大 HP，重新開始出招
+      m.hp = Math.max(1, Math.round(m.hp / (m.mhp || m.d.hp) * m.d.hp)); m.mhp = m.d.hp;
+      bossInit(m); m.vx = 0; m.tg = 0; m.nf = 0;
+    }
     else Object.assign(m, { vx: 0, vy: 0, act: null, fly: null, stun: 0, state: 'idle', t: 1, aggro: 0, chill: 0, onGround: m.d.ai !== 'fly' && m.onGround });
-  }
+  });
   MN.mobs.clear();
 }
 function mnMessage(msg) {
@@ -4895,7 +4964,7 @@ function mnMessage(msg) {
 function mnEntry(u, t) {
   if (!Array.isArray(u) || u.length < 5) return;
   const id = n0(u[0]), m = G.monsters[id], x = +u[1], y = +u[2];
-  if (!m || m.sp.id !== id || m.d.boss || !isFinite(x) || !isFinite(y)) return;
+  if (!m || m.sp.id !== id || (m.d.boss && !MN.bo) || !isFinite(x) || !isFinite(y)) return;
   let E = MN.mobs.get(id);
   if (!E) { E = { id, buf: [], x, y }; MN.mobs.set(id, E); }
   const B = E.buf, last = B[B.length - 1];
@@ -4905,17 +4974,23 @@ function mnEntry(u, t) {
   if (B.length > 10) B.splice(0, B.length - 10);
   E.x = x; E.y = y;
   E.fl = n0(u[3]); E.hp = Math.max(0, Math.round(+u[4] || 0)); E.ac = n0(u[5]); E.at = clamp((+u[6] || 0) / 100, 0, 2);
+  if (m.d.boss) { E.mhp = Math.max(1, n0(u[7]) || m.d.hp); E.ph = n0(u[8]) === 2 ? 2 : 1; E.tm = clamp(n0(u[9]) / 100, 0, 3); E.nf = clamp(n0(u[10]), 0, 99); E.tg = n0(u[11]); }
   if (m.net === E) mnApply(m, E, false);
 }
 // 把伺服器的狀態套到怪物上（bind = 第一次對應到這隻怪，例如剛進入範圍、讀取存檔後重建了怪物）
 function mnApply(m, E, bind) {
   const fl = E.fl, d = m.d, dead = !!(fl & 64);
+  if (d.boss) m.mhp = E.mhp || d.hp;
   if (bind) { m.x = E.x; m.y = E.y; m.vx = m.vy = 0; m.dead = dead; m.dying = 0; m.spawnFx = fl & 128 ? 0.6 : 0; m.hp = E.hp; m.flash = 0; m.barT = 0; m.pend = 0; m.predT = 0; }
-  else if (dead && !m.dead) mobDie(m, false);   // 別人打死的
+  else if (dead && !m.dead) {   // 別人打死的
+    mobDie(m, false);
+    if (d.boss) { G.hazards = []; if (bossNear(m.x)) { SFX.bossDie(); addShake(8); toast(`${d.name}被討伐了`, '#d8cfb4'); } }
+  }
   else if (!dead && m.dead) {   // 重生
-    m.dead = false; m.dying = 0; m.spawnFx = 0.6; m.hp = d.hp; m.pend = 0; m.predT = 0; m.barT = 0;
+    m.dead = false; m.dying = 0; m.spawnFx = 0.6; m.hp = d.boss ? E.hp : d.hp; m.pend = 0; m.predT = 0; m.barT = 0;
     m.x = E.x; m.y = E.y; E.buf = [{ t: netNow() - 1000, x: E.x, y: E.y }];
-    burst(m.x, m.y - d.h / 2, 10, ['#fff7d6', '#bde8c8'], 120, 'dot');
+    burst(m.x, m.y - d.h / 2, d.boss ? 40 : 10, ['#fff7d6', '#bde8c8'], d.boss ? 260 : 120, 'dot');
+    if (d.boss) { bossInit(m); if (G.player.x > RUIN_X && G.player.x < FROST_X) { toast(`${d.name}再次出現在祭壇了！`, '#ff9a8e'); SFX.roar(); } }
   }
   const ground = !!(fl & 2);
   if (!bind && ground && !m.onGround) m.squash = 1;
@@ -4925,16 +5000,25 @@ function mnApply(m, E, bind) {
     if (m.pend > 0 || m.predT > 0) m.hp = Math.min(m.hp, E.hp);   // 自己剛打的傷害還沒被伺服器算進去
     else { if (E.hp < m.hp) { m.flash = 0.1; m.barT = 5; } m.hp = E.hp; }   // 別人打的
   }
+  if (d.boss) { mnBossApply(m, E); return; }
   const A = MN_ACTS[E.ac] || null;
   if (!A) { m.act = null; if (m.fly) m.fly.st = 'idle'; }
   else if (A[0] === 'fly') { m.act = null; if (!m.fly) m.fly = { st: 'idle', t: 0 }; if (m.fly.st !== A[1]) { m.fly.st = A[1]; m.fly.t = E.at; } }
   else if (!m.act || m.act.k !== A[0] || m.act.st !== A[1]) m.act = { k: A[0], st: A[1], t: E.at };
 }
+// 伺服器 Boss 的狀態（招式、階段、人數、目標）；招式剩餘時間在 mnFrame 倒數
+function mnBossApply(m, E) {
+  if (!m.boss) bossInit(m);
+  const B = m.boss, A = MN_BOSS_ACTS[E.ac] || null, st = A ? A[0] : 'idle', tele = A ? A[1] : null;
+  if (B.st !== st || B.tele !== tele) { B.st = st; B.tele = tele; B.t = E.at; if (st === 'tele') B.teleMax = E.tm || E.at || 1; }
+  B.phase = E.ph; m.nf = E.nf; m.tg = E.tg;
+}
 function mnEvent(e) {
   if (!Array.isArray(e)) return;
   const id = n0(e[0]), m = G.monsters[id];
-  if (!m || m.d.boss || !MN.mobs.has(id) || m.hide) return;
+  if (!m || (m.d.boss && !MN.bo) || !MN.mobs.has(id) || m.hide) return;
   const k = e[1];
+  if (m.d.boss && k >= 6) { mnBossEvent(m, k, e); return; }
   if (k === 1) { const tx = +e[2], ty = +e[3]; if (isFinite(tx) && isFinite(ty)) throwSnowball(m, tx, ty); }
   else if (k === 2) monsterSlam(m);
   else if (k === 3) SFX.charge();
@@ -4944,11 +5028,27 @@ function mnEvent(e) {
     if (dmg > 0 && !m.dead && SETTINGS.others) { mobDmgText(m, Math.min(dmg, 999999), e[3] === 1, true); m.flash = Math.max(m.flash, 0.08); m.barT = 5; }
   }
 }
+// 伺服器 Boss 的招式事件：震波與霧彈在自己的前端產生（判定有沒有打中自己），其他是特效與音效
+function mnBossEvent(m, k, e) {
+  if (m.dead) return;
+  const num = (v, a, b) => { v = +v; return isFinite(v) ? clamp(v, a, b) : null; };
+  if (k === 6) { const x = num(e[2], ARENA_X - 100, FROST_X); if (x !== null) bossWave(m, x, e[3] === 1); }
+  else if (k === 7) {
+    const ox = num(e[2], ARENA_X - 200, FROST_X), oy = num(e[3], 0, GROUND_Y), vx = num(e[4], -600, 600), vy = num(e[5], -600, 600);
+    if (ox !== null && oy !== null && vx !== null && vy !== null) bossOrb(m, ox, oy, vx, vy);
+  }
+  else if (k === 8) bossFx(m, 'enrage');
+  else if (k === 9) bossFx(m, 'reset');
+  else if (k === 10) bossFx(m, 'warn');
+  else if (k === 11) bossFx(m, 'charge');
+  else if (k === 12) bossFx(m, 'chargeEnd');
+}
 // 擊殺結算（有出力的人才會收到）：經驗值依傷害比例、任務擊殺數、個人掉寶
 function mnKill(msg) {
   const id = n0(msg.id), m = G.monsters[id], p = G.player;
-  if (!m || m.sp.id !== id || m.d.boss || !p) return;
+  if (!m || m.sp.id !== id || (m.d.boss && !MN.bo) || !p) return;
   const exp = clamp(n0(msg.x), 0, m.d.exp);
+  if (m.d.boss) { mnBossKill(m, msg, exp); return; }
   const E = MN.mobs.get(id);
   if (E && E.fl !== undefined) E.fl |= 64;
   if (MN.on && !m.dead) mobDie(m, true); else SFX.kill();
@@ -4956,6 +5056,24 @@ function mnKill(msg) {
   p.stats.kills++;
   questKill(m.type);
   if (exp > 0) gainExp(exp);
+}
+// Boss 擊殺結算：輸出達到門檻（c = 1）才算討伐（Boss 擊殺數、任務、個人 Boss 掉寶），否則只有經驗值
+function mnBossKill(m, msg, exp) {
+  const p = G.player, d = m.d, credit = msg.c !== 0, nf = n0(msg.n);
+  const E = MN.mobs.get(m.sp.id);
+  if (E && E.fl !== undefined) E.fl |= 64;
+  if (!m.dead) mobDie(m, true); else SFX.kill();
+  G.hazards = []; SFX.bossDie(); addShake(12);
+  if (credit) {
+    bossLoot(m);
+    p.stats.kills++; p.stats.bossKills++;
+    questKill(m.type);
+  }
+  if (exp > 0) gainExp(exp);
+  if (credit) G.banner = { title: '討伐成功！', sub: `擊敗了 ${d.name}（Boss 擊殺 ${p.stats.bossKills} 次${nf > 1 ? `・${nf} 人共鬥` : ''}）`, t: 0, life: 3.4 };
+  else toast(`${d.name}被討伐了，但你的輸出太少，只獲得經驗值`, '#ffb3a8');
+  toast(`${d.name}將在 ${Math.round(d.respawn / 60)} 分鐘後再次出現`, '#d8cfb4');
+  persist(true);   // Boss 擊殺立即同步雲端（排行榜）
 }
 function mnHit(m, dmg, dir, crit, chill) {
   m.predT = MN_PRED;
@@ -4965,11 +5083,11 @@ function mnHit(m, dmg, dir, crit, chill) {
 }
 // 每一幀（netFrame 呼叫）：切換模式、內插位置、計時器、送出命中
 function mnFrame(dt) {
-  mnSwitch(!!(RT.ws && RT.ws.mobs && rtLive() && G.player));
+  mnSwitch(!!(RT.ws && RT.ws.mobs && rtLive() && G.player), !!(RT.ws && RT.ws.boss));
   if (!MN.on) return;
   const p = G.player, now = netNow(), rt = now - MN_DELAY;
   for (const m of G.monsters) {
-    if (m.d.boss) continue;
+    if (!mnOwns(m)) continue;
     const E = MN.mobs.get(m.sp.id);
     if (!E || E.fl === undefined || Math.abs(E.x - p.x) > MN_RANGE || zoneL(E.x) !== zoneL(p.x)) { m.hide = true; m.net = null; continue; }
     if (m.hide || m.net !== E) { m.hide = false; m.net = E; mnApply(m, E, true); }
@@ -4987,6 +5105,7 @@ function mnFrame(dt) {
     if (m.dead) { if (m.dying > 0) m.dying -= dt; continue; }
     if (m.act) m.act.t = Math.max(0, m.act.t - dt);
     if (m.fly) m.fly.t = Math.max(0, (m.fly.t || 0) - dt);
+    if (m.boss) { m.boss.t = Math.max(0, m.boss.t - dt); if (m.boss.st === 'charge') bossFx(m, 'chargep'); }
     if (m.predT > 0) { m.predT -= dt; if (m.predT <= 0 && !(m.pend > 0)) m.hp = E.hp; }
     if (m.pend > 0) { m.pend -= dt; if (m.pend <= 0) { m.hp = E.hp; m.predT = 0; } }   // 預測打死但伺服器沒有確認：恢復
     if (m.act && m.act.k === 'dash' && m.act.st === 'go') mobFx(m, 'dashp', p);
