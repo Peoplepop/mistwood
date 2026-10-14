@@ -30,7 +30,7 @@
 | 6-0 準備 | `worker/` 專案骨架（wrangler）、PA 新增 `POST /api/rt-ticket`、本機 `wrangler dev` 連線打通 | 註冊 Cloudflare、`npx wrangler login` |
 | 6-1 連線層 | 玩家位置與聊天改走 WebSocket，保留 HTTP 備援；訪客不再看到其他玩家 | PA `git pull` + Reload；部署 Worker |
 | 6-2 一般怪同步 | 伺服器權威怪物、命中驗證、擊殺結算（經驗依傷害比例、個人掉寶、任務計數） | 部署、一起實測（2026-10-14 已部署，待一起實測） |
-| 6-3 Boss 同步 | 霧之守衛 AI 搬到伺服器、全頻道共鬥、HP 依人數加成 | 部署 Worker（2026-10-14 本機完成） |
+| 6-3 Boss 同步 | 霧之守衛 AI 搬到伺服器、全頻道共鬥、HP 依人數加成 | 部署 Worker（2026-10-14 已部署） |
 
 ## 進度
 
@@ -57,7 +57,7 @@
   - 驗證：`npm test` 24 項（新增 5 項）；本機 wrangler dev ＋ Flask ＋ 瀏覽器玩家＋ Node 假玩家：雙向收到技能／受傷事件與 HP、職業不符或不認得的技能被伺服器擋掉、打怪傷害數字只送給別人；瀏覽器畫面確認各技能特效、傷害數字、HP 條、死亡幽靈正常，裝飾投射物不會讓怪物扣血。
   - **需要重新部署 Worker**（`cd worker && npx wrangler deploy`）；PythonAnywhere 不用更新。
 
-- **2026-10-14 完成 6-3 Boss 同步（本機驗證通過，Worker 待部署）**
+- **2026-10-14 完成 6-3 Boss 同步（本機驗證通過，2026-10-14 已部署 Worker）**
   - 共用程式碼：霧之守衛的 AI（`BOSS`、`inArena`、`bossInit`、`bossChoose`、`bossAct`、`bossStep`、`bossSig`）搬進 `<mobsim>` 區塊，`npm run gen` 一起抽進 `mobs.gen.js`。原本 AI 裡的音效、畫面搖晃、`later()` 計時器、`G.hazards` 改成 `fx(m, 種類, 資料)` 回呼與 Boss 自己的延遲佇列 `B.q`（狂暴化的第二次震波、一顆一顆射出的霧彈）；單機版 `updateBoss` → `bossStep(m, dt, G.player, inArena(G.player), bossFx)`，行為和以前相同。最大 HP 改用 `m.mhp`（單機 = 22000）。
   - 指紋：一般怪的 `msig` **沒有改變**（Boss 的指紋另外算 `bsig` = `BOSS`＋霧之守衛資料＋出生點；`BOSS.ver` 在 AI 改動時 +1）。所以新前端＋目前已部署的 Worker：一般怪照樣用伺服器的、Boss 用本機的；新 Worker＋舊前端：舊前端照舊（看不到、打不到伺服器 Boss，也不算人數）。
   - 啟用條件：前端 hello 多帶 `ms`（怪物指紋）、`bs`（Boss 指紋），兩個都和 Worker 相同才算「支援 Boss 同步」；welcome 多帶 `boss: 1`、`bsig`，前端也比對後才把 Boss 交給伺服器。訪客、HTTP 備援、斷線、舊 Worker → 本機單人 Boss（斷線時看得到的 Boss 原地改回本機 AI，血量百分比不變）。緊急關閉：`channel.js` 的 `BOSS_SYNC = false`。
