@@ -19,6 +19,7 @@ export const SUB_DT = 0.025;         // 每個 tick 再切成小步模擬（和�
 export const HIT_RANGE_X = 900;      // 命中檢查：怪物和玩家（最後回報位置）的最大水平距離（穿透箭射程 680 + 移動與延遲的寬限）
 export const HIT_RANGE_Y = 450;
 export const LAST_HIT_BONUS = 0.1;   // 最後一擊額外分到的經驗值比例（多人時）
+export const DMG_EVENTS_MAX = 30;    // 每個 tick 最多記錄幾個「別人打怪的傷害數字」事件（前端一次最多處理 40 個事件，留空間給怪物招式）
 export const ACT_CODE = { dash: { tele: 1, go: 2, rec: 3 }, throw: { tele: 4, go: 5, rec: 6 }, slam: { tele: 7, go: 8, rec: 9 } };
 export const FLY_CODE = { tele: 10, dive: 11 };
 const NO_TARGET = Object.freeze({ x: -1e9, y: -1e9, dead: true });
@@ -87,7 +88,7 @@ export class MobWorld {
       Object.assign(m, { id: sp.id, spawnFx: 0, dmg: new Map(), ag: 0, respawnAt: 0 });
       this.mobs.push(m); this.byId.set(m.id, m);
     }
-    this.events = [];   // 這次 tick 發生的事件：[發生位置 x, [id, 事件, ...]]
+    this.events = [];   // 這次 tick 發生的事件：[發生位置 x, [id, 事件, ...], 不用送給的玩家 uid?]
     this.fx = (m, k, p) => {   // mobStep 的特效／音效 → 送給附近玩家的事件
       if (k === 'throw') {
         const tx = p === NO_TARGET ? m.x + m.face * 250 : p.x, ty = p === NO_TARGET ? m.y : p.y;
@@ -157,6 +158,8 @@ export class MobWorld {
     m.dmg.set(pl.uid, (m.dmg.get(pl.uid) || 0) + real);
     m.ag = pl.uid;
     mobKnock(m, dir, crit, chill);
+    // 傷害數字給附近的其他玩家看（出手的人自己已經先顯示了）
+    if (this.events.length < DMG_EVENTS_MAX) this.events.push([m.x, [m.id, 5, dmg, crit ? 1 : 0], pl.uid]);
     if (m.hp > 0) return { ok: true, dmg };
     // 死亡：經驗值依傷害比例分配，之後依怪物的重生時間在出生點重生
     m.dead = true; m.hp = 0; m.act = null; m.fly = null; m.vx = 0; m.vy = 0;
@@ -167,10 +170,11 @@ export class MobWorld {
   }
 
   /**
-   * 給某位玩家的快照（只送有變化的怪物）。V = 這位玩家的 { mk: Map(id → 上次送出的內容) }，x = 玩家位置。
+   * 給某位玩家的快照（只送有變化的怪物）。V = 這位玩家的 { mk: Map(id → 上次送出的內容) }，x = 玩家位置，
+   * uid = 這位玩家（自己打出的傷害數字不再送回去）。
    * 沒有任何變化回傳 null。
    */
-  view(V, x, now) {
+  view(V, x, now, uid) {
     const u = [], g = [], z = zoneL(x);
     for (const m of this.mobs) {
       const had = V.mk.has(m.id), dx = Math.abs(m.x - x);
@@ -182,7 +186,7 @@ export class MobWorld {
       if (V.mk.get(m.id) !== key) { V.mk.set(m.id, key); u.push(e); }
     }
     const ev = [];
-    for (const [ex, e] of this.events) if (zoneL(ex) === z && Math.abs(ex - x) <= VIEW_R + VIEW_KEEP) ev.push(e);
+    for (const [ex, e, skip] of this.events) if ((skip === undefined || skip !== uid) && zoneL(ex) === z && Math.abs(ex - x) <= VIEW_R + VIEW_KEEP) ev.push(e);
     if (!u.length && !g.length && !ev.length) return null;
     const msg = { t: 'm', n: now, u };
     if (g.length) msg.g = g;

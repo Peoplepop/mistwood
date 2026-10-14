@@ -13,6 +13,7 @@
 - `src/channel.js`：頻道（WebSocket Hibernation API、位置廣播、聊天、怪物 10 Hz tick 與命中訊息）
 - `src/mobworld.js`：伺服器權威的一般怪物（模擬、命中檢查、傷害上限、經驗分配、興趣範圍快照；不依賴 Cloudflare，可直接測試）
 - `src/mobs.gen.js`：**自動產生**，從 `../index.html` 的 `// <mobsim>` 區塊抽出的怪物資料與 AI（`npm run gen`；不要手改）
+- `src/fx.js`：其他玩家的技能特效、遠程攻擊與受傷事件（檢查、頻率限制、只轉給同一張地圖左右 1500 內的玩家；純裝飾）
 - `src/lobby.js`：大廳（各頻道人數、幫剛上線的玩家挑有空位的頻道）
 - `src/ticket.js`：驗證 PythonAnywhere 簽發的票券
 - `src/chat.js`、`src/state.js`：聊天過濾、狀態檢查（規則和 `server/app.py` 相同）

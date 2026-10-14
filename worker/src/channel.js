@@ -8,15 +8,18 @@
 // 訊息格式（JSON 文字；另有純文字 'ping' → 'pong' 由平台自動回覆、不會喚醒物件）
 //   前端 → 伺服器
 //     {t:'hello', ticket, s:{狀態}}       連上後第一則：票券＋自己的狀態
-//     {t:'s', x, y, f, st, ak, ad, an, job, lv, eq, em, en}   狀態有變化時回報（每秒最多約 10 次）
+//     {t:'s', x, y, f, st, ak, ad, an, job, lv, eq, em, en, hp?, e?}   狀態有變化時回報（每秒最多約 10 次）
+//                                         hp = HP 百分比、e = 技能／攻擊／受傷的特效事件（格式見 fx.js；舊版前端沒有這兩個欄位）
 //     {t:'chat', q, text}                 聊天（q = 前端自訂的請求編號，回覆時帶回）
 //     {t:'h', h:[[怪物 id, 傷害, 方向, 爆擊?1:0, 緩速秒數?], ...]}   打中伺服器的怪物（6-2）
 //   伺服器 → 前端
 //     {t:'welcome', ch, nch, cap, me, name, lv, online, total, chans, players, chat, now, mobs, msig}
 //                                         mobs = 怪物同步的協定版本（0 = 不支援，前端用本機怪物）、msig = 怪物資料指紋
-//     {t:'m', n, u, g?, e?}               怪物快照（只送有變化、左右約 1500 內的怪；格式見 mobworld.js／index.html 的 MN）
+//     {t:'m', n, u, g?, e?}               怪物快照（只送有變化、左右約 1500 內的怪；格式見 mobworld.js／index.html 的 MN；
+//                                         e 裡也有別人打怪的傷害數字 [id, 5, 傷害, 爆擊]，不會送給出手的人自己）
 //     {t:'k', id, x, l}                   擊殺結算：只送給有出力的人，x = 分到的經驗值，l = 1 代表最後一擊
-//     {t:'ps', now, players}              有變化的玩家（格式同 HTTP 版 /api/presence 的 players）
+//     {t:'ps', now, players}              有變化的玩家（格式同 HTTP 版 /api/presence 的 players，另有 hp；
+//                                         附近玩家的特效事件放在 players[i].e，只送給同一張地圖左右 1500 內的人）
 //     {t:'leave', id}                     玩家離開頻道
 //     {t:'chat', msg:{id, uid, name, text, ts}}
 //     {t:'chans', chans, online, total}   各頻道人數有變化
@@ -31,6 +34,7 @@ import { verifyTicket } from './ticket.js';
 import { parseState } from './state.js';
 import { prepareChat, CHAT_GAP_MS, CHAT_BURST, CHAT_BURST_WINDOW_MS } from './chat.js';
 import { MobWorld, MOB_PROTO, MOB_SIG, ACTIVE_MS, maxHit } from './mobworld.js';
+import { parseFx, psPlayersFor, FX_QUEUE, FX_RATE } from './fx.js';
 
 // ---- 怪物（6-2） ----
 const MOB_SYNC = true;         // false = 不提供伺服器怪物（welcome 的 mobs = 0，前端照舊用本機怪物）
@@ -39,6 +43,7 @@ const IDLE_STOP_MS = 5000;     // 沒有活躍玩家（附近沒有需要模擬�
 const HIT_RATE = [48, 24];     // 命中的令牌桶（每位玩家）：最多連續 48 次，每秒補 24 次（超過的命中直接丟掉）
 const HITS_PER_MSG = 24;       // 一則訊息最多幾次命中
 
+const fxFields = () => ({ ev: [], etok: FX_RATE[0], etMs: Date.now() });
 const send = (ws, obj) => { try { ws.send(typeof obj === 'string' ? obj : JSON.stringify(obj)); } catch (e) { /* 連線已關閉 */ } };
 
 export class Channel extends DurableObject {
@@ -69,7 +74,7 @@ export class Channel extends DurableObject {
     // 從休眠醒來：依每條連線的 attachment 重建玩家清單
     for (const ws of ctx.getWebSockets()) {
       const a = ws.deserializeAttachment();
-      if (a && a.uid) this.players.set(a.uid, { ...a, ws, chatTs: [], tok: STATE_RATE[0], tokMs: Date.now(), ...this.mobFields() });
+      if (a && a.uid) this.players.set(a.uid, { ...a, ws, chatTs: [], tok: STATE_RATE[0], tokMs: Date.now(), ...this.mobFields(), ...fxFields() });
     }
   }
 
@@ -145,7 +150,7 @@ export class Channel extends DurableObject {
     }
     const now = Date.now();
     const P = { ws, uid: tk.uid, name: tk.name, lvmax: tk.lvmax, s, emMs: s.em >= 0 ? now : 0, ts: now,
-      chatTs: [], tok: STATE_RATE[0], tokMs: now, ...this.mobFields() };
+      chatTs: [], tok: STATE_RATE[0], tokMs: now, ...this.mobFields(), ...fxFields() };
     this.players.set(P.uid, P);
     this.persist(P);
     const others = [];
@@ -173,6 +178,7 @@ export class Channel extends DurableObject {
     if (!s) return;
     if (s.en !== P.s.en) P.emMs = s.em >= 0 ? now : 0;   // 表情序號有變才更新開始時間
     P.s = s; P.ts = now;
+    this.onFx(P, d.e, now);
     this.persist(P);
     this.markDirty(P.uid);
     this.startTick();   // 有人在動：怪物要開始（繼續）模擬
@@ -185,10 +191,24 @@ export class Channel extends DurableObject {
 
   playerJson(P, now) {
     const s = P.s;
-    return {
+    const j = {
       id: P.uid, name: P.name, x: s.x, y: s.y, f: s.f, st: s.st, ak: s.ak, ad: s.ad, an: s.an, job: s.job, lv: s.lv,
       eq: s.eq, em: s.em, en: s.en, ea: s.em >= 0 ? Math.max(0, now - P.emMs) : null, ts: P.ts,
     };
+    if (s.hp >= 0) j.hp = s.hp;
+    return j;
+  }
+
+  /** 技能／攻擊／受傷的特效事件：檢查、限制頻率後先存起來，下一次廣播時送給附近的玩家（純裝飾） */
+  onFx(P, list, now) {
+    if (!Array.isArray(list) || !list.length) return;
+    P.etok = Math.min(FX_RATE[0], P.etok + (now - P.etMs) / 1000 * FX_RATE[1]);
+    P.etMs = now;
+    for (const e of parseFx(list, P.s.job)) {
+      if (P.etok < 1 || P.ev.length >= FX_QUEUE) break;   // 太頻繁：之後的事件丟掉
+      P.etok -= 1;
+      P.ev.push(e);
+    }
   }
 
   markDirty(uid) {
@@ -200,10 +220,21 @@ export class Channel extends DurableObject {
   flush() {
     this.flushTimer = null;
     if (!this.dirty.size) return;
-    const now = Date.now(), players = [];
-    for (const uid of this.dirty) { const P = this.players.get(uid); if (P) players.push(this.playerJson(P, now)); }
+    const now = Date.now(), items = [];
+    for (const uid of this.dirty) {
+      const P = this.players.get(uid);
+      if (P) { items.push({ uid, s: P.s, j: this.playerJson(P, now), ev: P.ev }); P.ev = []; }
+    }
     this.dirty.clear();
-    if (players.length) this.broadcast({ t: 'ps', now, players });
+    if (!items.length) return;
+    const players = items.map(it => it.j);
+    if (!items.some(it => it.ev.length)) { this.broadcast({ t: 'ps', now, players }); return; }
+    // 有特效事件：只有附近的玩家收到事件，其他人收到一樣的位置廣播
+    const plain = JSON.stringify({ t: 'ps', now, players });
+    for (const Q of this.players.values()) {
+      const list = psPlayersFor(items, Q);
+      send(Q.ws, list ? { t: 'ps', now, players: list } : plain);
+    }
   }
 
   broadcast(obj) {
@@ -323,7 +354,7 @@ export class Channel extends DurableObject {
     const W = this.ensureWorld();
     const n = W.step(dt, this.mobPlayers(now), now);
     for (const P of this.players.values()) {
-      const msg = W.view(P.mv, P.s.x, now);
+      const msg = W.view(P.mv, P.s.x, now, P.uid);
       if (msg) send(P.ws, msg);
     }
     W.events = [];

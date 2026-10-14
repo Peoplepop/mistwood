@@ -47,6 +47,7 @@ export function parseState(d, lvmax) {
     }
   }
   const em = d.em === undefined ? -1 : int(d.em);
+  const hp = int(d.hp);
   return {
     x: round(clamp(x, 0, WORLD_W), 1), y: round(clamp(y, 0, WORLD_H), 1),
     f: d.f === -1 ? -1 : 1,
@@ -57,5 +58,6 @@ export function parseState(d, lvmax) {
     job, lv, eq,
     em: em !== null && em >= -1 && em < EMOTES ? em : -1,
     en: seq(d.en),
+    hp: hp === null ? -1 : clamp(hp, 0, 100),   // HP 百分比（-1 = 舊版前端沒有回報）
   };
 }
