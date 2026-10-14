@@ -1,6 +1,6 @@
 # 晨霧森林 即時連線伺服器（Cloudflare Worker + Durable Objects）
 
-第六階段的即時連線：玩家位置、動作、表情與頻道聊天改走 WebSocket（6-1），以及伺服器權威的一般怪物同步（6-2）。
+第六階段的即時連線：玩家位置、動作、表情與頻道聊天改走 WebSocket（6-1）、伺服器權威的一般怪物同步（6-2），以及 Boss（霧之守衛）的全頻道共鬥（6-3）。
 帳號、雲端存檔、排行榜仍在 PythonAnywhere，不受影響。
 
 ```
@@ -11,7 +11,7 @@
 
 - `src/index.js`：入口（檢查來源網站 Origin、挑頻道、轉給頻道物件）
 - `src/channel.js`：頻道（WebSocket Hibernation API、位置廣播、聊天、怪物 10 Hz tick 與命中訊息）
-- `src/mobworld.js`：伺服器權威的一般怪物（模擬、命中檢查、傷害上限、經驗分配、興趣範圍快照；不依賴 Cloudflare，可直接測試）
+- `src/mobworld.js`：伺服器權威的一般怪物與 Boss（模擬、命中檢查、傷害上限、經驗分配、Boss 的 HP 人數加成與討伐門檻、興趣範圍快照；不依賴 Cloudflare，可直接測試）
 - `src/mobs.gen.js`：**自動產生**，從 `../index.html` 的 `// <mobsim>` 區塊抽出的怪物資料與 AI（`npm run gen`；不要手改）
 - `src/fx.js`：其他玩家的技能特效、遠程攻擊與受傷事件（檢查、頻率限制、只轉給同一張地圖左右 1500 內的玩家；純裝飾）
 - `src/lobby.js`：大廳（各頻道人數、幫剛上線的玩家挑有空位的頻道）
@@ -21,6 +21,7 @@
 前端的 `RT_URL_PROD` 已設為正式 Worker；即時連線連不上時自動退回 HTTP 輪詢（此時怪物也改回本機單機模擬）。
 怪物同步只有在 Worker 的 welcome 宣告 `mobs: 1` 而且怪物資料指紋（`msig`）和前端相同時才會啟用，
 所以前端可以比 Worker 先上線：舊版 Worker、或 `<mobsim>` 區塊改了但 Worker 還沒重新部署時，前端都會安靜地使用本機怪物。
+Boss 另外要 welcome 的 `boss: 1` 而且 Boss 資料指紋（`bsig`）相同；否則 Boss 留在本機（一般怪照樣同步）。改 Boss 的 AI 時把 `index.html` 的 `BOSS.ver` +1。
 
 ### 修改怪物資料／AI 之後
 
