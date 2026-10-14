@@ -16,6 +16,7 @@ export const EXPORTS = [
   'rand', 'randi', 'clamp', 'approach',
   'MONSTERS', 'PLATFORMS', 'SPAWNS',
   'makeMonster', 'resetMonster', 'mobSig', 'landOn', 'mobStep', 'mobKnock', 'MSKILL', 'FLY_H',
+  'BOSS', 'inArena', 'bossInit', 'bossStep', 'bossSig',
 ];
 
 export function generate(html = readFileSync(SRC, 'utf8')) {

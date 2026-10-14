@@ -15,12 +15,12 @@ test('mobs.gen.js 和 index.html 的 <mobsim> 區塊一致（不一致請執行 
   assert.equal(readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n'), generate());
 });
 
-test('世界：Boss 不在伺服器上，其他出生點都在', () => {
+test('世界：所有出生點都在伺服器上（Boss 也在，6-3）', () => {
   const W = new MobWorld();
   const boss = SPAWNS.filter(s => MONSTERS[s.type].boss);
   assert.equal(boss.length, 1);
-  assert.equal(W.mobs.length, SPAWNS.length - 1);
-  assert.ok(!W.byId.has(boss[0].id));
+  assert.equal(W.mobs.length, SPAWNS.length);
+  assert.equal(W.boss, W.byId.get(boss[0].id));
 });
 
 test('傷害上限：合法的最大傷害打得出來，明顯作弊的數字會被限制', () => {

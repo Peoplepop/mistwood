@@ -5,11 +5,28 @@
 // 規則（2026-10-13 使用者確認）：
 //   - 經驗值依傷害比例分配，最後一擊另加 10%（只有一個人打時就是全部）；任務擊殺數給每位有出力的人
 //   - 掉寶是個人的：伺服器只通知「誰有出力、分到多少經驗」，掉落由各自的前端擲骰
-//   - Boss（霧之守衛）不在這裡（6-3 再搬），前端仍在本機模擬
-import { SPAWNS, MONSTERS, makeMonster, resetMonster, mobStep, mobKnock, mobSig, zoneL, clamp } from './mobs.gen.js';
+//
+// Boss（霧之守衛，6-3）：同一份 MobWorld，AI 用 index.html 共用區塊的 bossStep。
+//   - 只有支援 Boss 同步的前端（hello 帶的 ms／bs 指紋都相同，pl.bo = true）看得到、打得到伺服器的 Boss，也只有他們算人數；
+//     舊版前端照舊在本機打自己的 Boss。
+//   - HP 依人數加成：最大 HP = 基礎 × (1 + 0.7 × (人數 − 1))，人數 = 祭壇內（支援 Boss 同步）的玩家 ∪ 這場有出力的玩家，最多 20。
+//     還沒被打過時人數可增可減；開打後有人加入：最大 HP 跟著變大、目前 HP 等比例增加（血量百分比不變，不會補血），
+//     有人離開不會變小（避免進出祭壇改變 HP）。回復全部體力（所有人離開祭壇 6 秒、或附近沒有活躍玩家）時重新計算。
+//   - 擊殺：經驗值（9000）依傷害比例分給所有有出力的人（最後一擊 +10%，和一般怪相同）。
+//     輸出達到門檻（bossCredit：最大 HP × min(3%, 30% ÷ 人數)）的人才算「討伐」：Boss 擊殺數、任務擊殺數、個人 Boss 掉寶；
+//     只摸一下的人只拿到很少的經驗值（避免排行榜的 Boss 擊殺數靠蹭一刀累積）。
+import {
+  SPAWNS, MONSTERS, makeMonster, resetMonster, mobStep, mobKnock, mobSig, zoneL, clamp, rand,
+  ARENA_X, FROST_X, bossStep, bossInit, bossSig, inArena,
+} from './mobs.gen.js';
 
 export const MOB_PROTO = 1;          // 協定版本（welcome 的 mobs 欄位；前端版本相同才使用伺服器的怪物）
 export const MOB_SIG = mobSig();     // 怪物資料指紋（welcome 的 msig；前端資料不同時不使用伺服器的怪物）
+export const BOSS_PROTO = 1;         // Boss 同步的協定版本（welcome 的 boss 欄位）
+export const BOSS_SIG = bossSig();   // Boss 資料指紋（welcome 的 bsig）
+export const BOSS_SCALE = 0.7;       // 每多一位玩家，Boss 最大 HP 增加基礎值的 70%
+export const BOSS_MAX_FIGHTERS = 20; // 人數加成的上限（＝每頻道人數上限）
+export const BOSS_CODE = { tele: { charge: 12, slam: 13, volley: 14 }, charge: 15, recover: 16, roar: 17 };   // Boss 狀態 → 快照的招式欄位
 export const VIEW_R = 1500;          // 興趣範圍：每位玩家只收左右這個距離內（同一張地圖）的怪物
 export const VIEW_KEEP = 150;        // 已經送過的怪物，超出 VIEW_R + VIEW_KEEP 才算離開（避免在邊界來回）
 export const SIM_R = 1700;           // 模擬範圍：只模擬「活躍玩家」左右這個距離內的怪物，其他的停在原地
@@ -58,8 +75,22 @@ export function splitExp(exp, dmg, last) {
   return out;
 }
 
-/** 怪物 → 快照的一筆 [id, x, y, 旗標, hp, 招式, 招式剩餘(1/100 秒)]（格式見 index.html 的 MN 說明） */
+/** Boss 在 n 位玩家時的最大 HP */
+export function bossMaxHp(base, n) {
+  return Math.round(base * (1 + BOSS_SCALE * (clamp(Math.floor(n) || 1, 1, BOSS_MAX_FIGHTERS) - 1)));
+}
+
+/** 算「討伐」（Boss 擊殺數、任務、掉寶）需要的最低傷害：最大 HP × min(3%, 30% ÷ 人數) */
+export function bossCredit(mhp, n) {
+  return Math.ceil(mhp * Math.min(0.03, 0.3 / Math.max(1, n)));
+}
+
+/**
+ * 怪物 → 快照的一筆 [id, x, y, 旗標, hp, 招式, 招式剩餘(1/100 秒)]（格式見 index.html 的 MN 說明）
+ * Boss 另外附加 [最大 HP, 階段 1/2, 預兆總長(1/100 秒), 人數, 目標玩家 uid]
+ */
 export function encodeMob(m) {
+  if (m.d.boss) return encodeBoss(m);
   let fl = 0, ac = 0, at = 0;
   if (m.face < 0) fl |= 1;
   if (m.onGround) fl |= 2;
@@ -75,20 +106,44 @@ export function encodeMob(m) {
   }
   return [m.id, Math.round(m.x), Math.round(m.y), fl, Math.max(0, Math.round(m.hp)), ac, Math.max(0, Math.round(at * 100))];
 }
-// 比較用：位置、旗標、HP、招式有變才重送（招式剩餘時間前端自己倒數）
-const keyOf = e => e[1] + ',' + e[2] + ',' + e[3] + ',' + e[4] + ',' + e[5];
+function encodeBoss(m) {
+  const B = m.boss;
+  let fl = 2, ac = 0, at = 0;
+  if (m.face < 0) fl |= 1;
+  if (Math.abs(m.vx) > 1) fl |= 8;
+  if (m.dead) fl |= 64;
+  if (m.spawnFx > 0) fl |= 128;
+  if (!m.dead && B) {
+    ac = B.st === 'tele' ? BOSS_CODE.tele[B.tele] || 0 : BOSS_CODE[B.st] || 0;
+    at = ac ? B.t : 0;
+  }
+  return [m.id, Math.round(m.x), Math.round(m.y), fl, Math.max(0, Math.round(m.hp)), ac, Math.max(0, Math.round(at * 100)),
+    Math.round(m.mhp), B && B.phase === 2 ? 2 : 1, B && B.st === 'tele' ? Math.round(B.teleMax * 100) : 0, m.nf, m.dead ? 0 : m.tg || 0];
+}
+// 比較用：位置、旗標、HP、招式有變才重送（招式剩餘時間前端自己倒數）；Boss 另外比較附加的欄位
+const keyOf = e => e[1] + ',' + e[2] + ',' + e[3] + ',' + e[4] + ',' + e[5] + (e.length > 7 ? ',' + e.slice(7).join() : '');
 
 export class MobWorld {
   constructor() {
     this.mobs = [];
     this.byId = new Map();
+    this.boss = null;
     for (const sp of SPAWNS) {
-      if (MONSTERS[sp.type].boss) continue;   // Boss 仍由前端模擬（6-3）
       const m = makeMonster(sp);
       Object.assign(m, { id: sp.id, spawnFx: 0, dmg: new Map(), ag: 0, respawnAt: 0 });
+      if (m.d.boss) { Object.assign(m, { nf: 1, tg: 0, tgUntil: 0 }); this.boss = m; }
       this.mobs.push(m); this.byId.set(m.id, m);
     }
-    this.events = [];   // 這次 tick 發生的事件：[發生位置 x, [id, 事件, ...], 不用送給的玩家 uid?]
+    // 這次 tick 發生的事件：[發生位置 x, [id, 事件, ...], 不用送給的玩家 uid?, Boss 的事件?]（Boss 的事件只送給支援 Boss 同步的玩家）
+    this.events = [];
+    // bossStep 的特效／招式 → 事件：6 震波 [x, 狂暴?1:0]、7 霧彈 [x, y, vx, vy]、8 狂暴化、9 回復全部體力、10 開始預兆、11 開始衝撞、12 衝撞結束
+    this.bfx = (m, k, e) => {
+      const ev = k === 'wave' ? [m.id, 6, Math.round(m.x), e.ph2 ? 1 : 0]
+        : k === 'orb' ? [m.id, 7, Math.round(e.ox), Math.round(e.oy), Math.round(Math.cos(e.a) * e.spd), Math.round(Math.sin(e.a) * e.spd)]
+        : k === 'enrage' ? [m.id, 8] : k === 'reset' ? [m.id, 9] : k === 'warn' ? [m.id, 10] : k === 'charge' ? [m.id, 11] : k === 'chargeEnd' ? [m.id, 12] : null;
+      if (ev) this.events.push([m.x, ev, undefined, 1]);
+      if (k === 'reset') { m.dmg.clear(); m.nf = 0; }   // 下一次 tick 依目前人數重新計算 HP
+    };
     this.fx = (m, k, p) => {   // mobStep 的特效／音效 → 送給附近玩家的事件
       if (k === 'throw') {
         const tx = p === NO_TARGET ? m.x + m.face * 250 : p.x, ty = p === NO_TARGET ? m.y : p.y;
@@ -123,6 +178,7 @@ export class MobWorld {
     const act = players.filter(p => p.active), live = players.filter(p => !p.dead);
     let n = 0;
     for (const m of this.mobs) {
+      if (m === this.boss) { n += this.stepBoss(m, dt, players, now); continue; }
       if (m.dead) {
         if (now >= m.respawnAt) { resetMonster(m); m.dmg.clear(); m.ag = 0; }
         continue;
@@ -136,6 +192,63 @@ export class MobWorld {
     return n;
   }
 
+  // ---------- Boss ----------
+  /** Boss 前進 dt 秒；回傳 1 = 有模擬（附近有活躍、支援 Boss 同步的玩家），0 = 沒有 */
+  stepBoss(m, dt, players, now) {
+    if (m.dead) {
+      if (now >= m.respawnAt) { resetMonster(m); this.resetBoss(m); }
+      return 0;
+    }
+    const cap = players.filter(p => p.bo), z = zoneL(m.x);
+    if (!cap.some(p => p.active && zoneL(p.x) === z && Math.abs(p.x - m.x) <= SIM_R)) {
+      // 附近沒有人：戰鬥中斷就回復全部體力、回到原位（和單機版「離開祭壇 6 秒」相同的結果）
+      if (m.hp < m.mhp || m.mhp !== m.d.hp || (m.boss && m.boss.phase > 1)) { Object.assign(m, { x: m.sp.x, vx: 0 }); this.resetBoss(m); }
+      return 0;
+    }
+    // 人數：祭壇內的玩家（倒下的也算）＋這場有出力的玩家
+    const ids = new Set(m.dmg.keys());
+    for (const p of cap) if (p.x > ARENA_X - 30 && p.x < FROST_X) ids.add(p.uid);
+    this.scaleBoss(m, ids.size);
+    const arena = cap.filter(inArena), eng = arena.length > 0;
+    const tgt = eng ? this.bossTarget(m, arena, now) : NO_TARGET;
+    if (!eng) m.tg = 0;
+    for (let left = dt; left > 1e-6; left -= SUB_DT) {
+      bossStep(m, Math.min(SUB_DT, left), tgt, eng, this.bfx);
+      if (!m.nf) this.scaleBoss(m, ids.size);   // 剛回復全部體力：依目前人數重新計算
+    }
+    return 1;
+  }
+
+  /** 回到「還沒開打」的狀態：HP、人數、傷害紀錄、目標重設（位置不變） */
+  resetBoss(m) {
+    bossInit(m);
+    m.hp = m.mhp = m.d.hp; m.nf = 1; m.dmg.clear(); m.tg = 0; m.tgUntil = 0; m.chill = 0;
+  }
+
+  /** 依人數調整最大 HP：還沒開打時直接用目前人數；開打後只會變大（目前 HP 等比例增加） */
+  scaleBoss(m, count) {
+    const n = clamp(count, 1, BOSS_MAX_FIGHTERS);
+    const fresh = !m.nf || (m.hp >= m.mhp && !m.dmg.size && (!m.boss || m.boss.phase === 1));
+    if (fresh) { m.nf = n; m.mhp = m.hp = bossMaxHp(m.d.hp, n); return; }
+    if (n > m.nf) {
+      const mhp = bossMaxHp(m.d.hp, n);
+      m.hp = Math.max(1, Math.round(m.hp * mhp / m.mhp)); m.mhp = mhp; m.nf = n;
+    }
+  }
+
+  /** Boss 的目標：祭壇內活著的玩家。目前的目標還在就維持，閒置時每 4～7 秒重新挑一次（60% 最近的、40% 隨機） */
+  bossTarget(m, arena, now) {
+    let p = m.tg ? arena.find(q => q.uid === m.tg) : null;
+    if (!p || (now >= m.tgUntil && (!m.boss || m.boss.st === 'idle'))) {
+      if (Math.random() < 0.6) {
+        p = arena[0];
+        for (const q of arena) if (Math.abs(q.x - m.x) < Math.abs(p.x - m.x)) p = q;
+      } else p = arena[Math.floor(Math.random() * arena.length)];
+      m.tg = p.uid; m.tgUntil = now + rand(4000, 7000);
+    }
+    return p;
+  }
+
   /**
    * 套用一次命中。pl = { uid, x, y, dead }，h = [id, 傷害, 方向, 爆擊, 緩速秒數?]，cap = 傷害上限。
    * 回傳 { ok:false, why } 或 { ok:true, dmg, kill? }；kill = { id, exp: Map(uid → 經驗值), last }
@@ -144,6 +257,7 @@ export class MobWorld {
     if (!Array.isArray(h) || h.length < 4) return { ok: false, why: 'format' };
     const m = Number.isInteger(h[0]) ? this.byId.get(h[0]) : undefined;
     if (!m) return { ok: false, why: 'mob' };
+    if (m === this.boss && !pl.bo) return { ok: false, why: 'boss' };   // 舊版前端（本機 Boss）不能打伺服器的 Boss
     if (m.dead) return { ok: false, why: 'dead' };
     if (m.spawnFx > 0.05) return { ok: false, why: 'spawn' };
     if (pl.dead) return { ok: false, why: 'pdead' };
@@ -159,14 +273,22 @@ export class MobWorld {
     m.ag = pl.uid;
     mobKnock(m, dir, crit, chill);
     // 傷害數字給附近的其他玩家看（出手的人自己已經先顯示了）
-    if (this.events.length < DMG_EVENTS_MAX) this.events.push([m.x, [m.id, 5, dmg, crit ? 1 : 0], pl.uid]);
+    if (this.events.length < DMG_EVENTS_MAX) this.events.push([m.x, [m.id, 5, dmg, crit ? 1 : 0], pl.uid, m === this.boss ? 1 : 0]);
     if (m.hp > 0) return { ok: true, dmg };
     // 死亡：經驗值依傷害比例分配，之後依怪物的重生時間在出生點重生
     m.dead = true; m.hp = 0; m.act = null; m.fly = null; m.vx = 0; m.vy = 0;
     m.respawnAt = now + m.d.respawn * 1000;
     const exp = splitExp(m.d.exp, m.dmg, pl.uid);
+    const kill = { id: m.id, exp, last: pl.uid };
+    if (m === this.boss) {   // Boss：輸出達到門檻的人才算討伐（擊殺數、任務、掉寶）
+      const need = bossCredit(m.mhp, m.nf);
+      kill.boss = true; kill.nf = m.nf;
+      kill.credit = new Set([...m.dmg].filter(([, v]) => v >= need).map(([uid]) => uid));
+      if (m.boss) m.boss.q = [];
+      m.tg = 0;
+    }
     m.dmg = new Map();
-    return { ok: true, dmg, kill: { id: m.id, exp, last: pl.uid } };
+    return { ok: true, dmg, kill };
   }
 
   /**
@@ -177,6 +299,7 @@ export class MobWorld {
   view(V, x, now, uid) {
     const u = [], g = [], z = zoneL(x);
     for (const m of this.mobs) {
+      if (m === this.boss && !V.bo) continue;   // 不支援 Boss 同步的玩家：在本機打自己的 Boss
       const had = V.mk.has(m.id), dx = Math.abs(m.x - x);
       if (zoneL(m.x) !== z || dx > VIEW_R + (had ? VIEW_KEEP : 0)) {
         if (had) { V.mk.delete(m.id); g.push(m.id); }
@@ -186,7 +309,9 @@ export class MobWorld {
       if (V.mk.get(m.id) !== key) { V.mk.set(m.id, key); u.push(e); }
     }
     const ev = [];
-    for (const [ex, e, skip] of this.events) if ((skip === undefined || skip !== uid) && zoneL(ex) === z && Math.abs(ex - x) <= VIEW_R + VIEW_KEEP) ev.push(e);
+    for (const [ex, e, skip, b] of this.events) {
+      if ((skip === undefined || skip !== uid) && (!b || V.bo) && zoneL(ex) === z && Math.abs(ex - x) <= VIEW_R + VIEW_KEEP) ev.push(e);
+    }
     if (!u.length && !g.length && !ev.length) return null;
     const msg = { t: 'm', n: now, u };
     if (g.length) msg.g = g;
@@ -194,9 +319,10 @@ export class MobWorld {
     return msg;
   }
 
-  /** 休眠前保存（物件被移出記憶體後，下次醒來時接著用；傷害紀錄不保存） */
+  /** 休眠前保存（物件被移出記憶體後，下次醒來時接著用；傷害紀錄不保存。活著的 Boss 只會在沒人時休眠，存成「還沒開打」） */
   dump() {
-    return this.mobs.map(m => [m.id, Math.round(m.x), Math.round(m.y), Math.max(0, Math.round(m.hp)), m.dead ? m.respawnAt : 0, m.onGround ? 1 : 0]);
+    return this.mobs.map(m => m === this.boss && !m.dead ? [m.id, m.sp.x, Math.round(m.y), m.d.hp, 0, 1]
+      : [m.id, Math.round(m.x), Math.round(m.y), Math.max(0, Math.round(m.hp)), m.dead ? m.respawnAt : 0, m.onGround ? 1 : 0]);
   }
 
   load(list) {
@@ -206,6 +332,7 @@ export class MobWorld {
       const m = this.byId.get(r[0]);
       if (!m || ![r[1], r[2], r[3], r[4]].every(Number.isFinite)) continue;
       if (r[4] > 0) { m.dead = true; m.hp = 0; m.respawnAt = r[4]; continue; }
+      if (m === this.boss) continue;   // 活著的 Boss：維持剛建立時的狀態（滿血、在原位）
       m.x = clamp(r[1], m.minX, m.maxX); m.y = clamp(r[2], 0, 760);
       m.hp = clamp(r[3], 1, m.d.hp); m.onGround = m.d.ai !== 'fly' && r[5] === 1;
     }

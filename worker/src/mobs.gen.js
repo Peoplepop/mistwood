@@ -123,22 +123,23 @@ function makeMonster(sp) {
   }
   else { minX = plat.x + d.w / 2 + 2; maxX = plat.x + plat.w - d.w / 2 - 2; }
   return {
-    sp, type: sp.type, d, x: sp.x, y: d.ai === 'fly' ? plat.y - FLY_H : plat.y, vx: 0, vy: 0, face: Math.random() < 0.5 ? -1 : 1, hp: d.hp,
+    sp, type: sp.type, d, x: sp.x, y: d.ai === 'fly' ? plat.y - FLY_H : plat.y, vx: 0, vy: 0, face: Math.random() < 0.5 ? -1 : 1, hp: d.hp, mhp: d.hp,
     minX, maxX, onGround: d.ai !== 'fly', state: 'walk', t: rand(0.5, 3), flash: 0, stun: 0, barT: 0, aggro: 0, chasing: false,
     dead: false, dying: 0, dyMax: 0.6, respawnT: 0, spawnFx: 0.6, anim: Math.random() * 10, squash: 0, lastSwing: -1, stack: 0, stackT: 0,
     chill: 0, boss: null, act: null, skCD: rand(1, 2.5), fly: null,
   };
 }
-// 重生：回到出生點、補滿 HP（特效由呼叫端處理）
+// 重生：回到出生點、補滿 HP（特效由呼叫端處理）。mhp = 最大 HP（一般怪＝資料的 hp；即時連線的 Boss 會依人數加成）
 function resetMonster(m) {
   const plat = PLATFORMS[m.sp.plat];
-  Object.assign(m, { x: m.sp.x, y: plat.y, vx: 0, vy: 0, hp: m.d.hp, dead: false, dying: 0, onGround: true, spawnFx: 0.6, flash: 0, stun: 0, barT: 0, aggro: 0, state: 'idle', t: 1, chill: 0, boss: null,
+  Object.assign(m, { x: m.sp.x, y: plat.y, vx: 0, vy: 0, hp: m.d.hp, mhp: m.d.hp, dead: false, dying: 0, onGround: true, spawnFx: 0.6, flash: 0, stun: 0, barT: 0, aggro: 0, state: 'idle', t: 1, chill: 0, boss: null,
     act: null, skCD: rand(1, 2.5), fly: null });
   if (m.d.ai === 'fly') { m.y = flyHome(m); m.onGround = false; }
 }
 // 怪物資料的指紋：前端與伺服器不同（例如改了出生點但 Worker 還沒重新部署）時，前端不使用伺服器的怪物
-function mobSig() {
-  const t = JSON.stringify([SPAWNS, MONSTERS, PLATFORMS, MSKILL]);
+function mobSig() { return sigOf([SPAWNS, MONSTERS, PLATFORMS, MSKILL]); }
+function sigOf(v) {
+  const t = JSON.stringify(v);
   let h = 2166136261;
   for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);
@@ -293,6 +294,95 @@ function updateFlyer(m, dt, p, fx) {
   m.onGround = false;
 }
 
+// ---- <mobsim> 區塊 5 ----
+const BOSS = { ver: 1, charge: 640, waveSpd: 430, waveLen: 600, orbSpd: 300, leash: 6 };   // ver：Boss 的 AI 有改就 +1（前端與伺服器不同時 Boss 改回本機）
+const inArena = p => !!p && !p.dead && p.x > ARENA_X - 30 && p.x < FROST_X;   // 活著而且在祭壇內（Boss 會注意到）
+function bossInit(m) { m.boss = { st: 'idle', t: 2, phase: 1, away: 0, tele: null, teleMax: 1, rep: 0, last: '', q: [] }; }
+// Boss 資料的指紋（即時連線時前端與伺服器不同就不使用伺服器的 Boss）
+function bossSig() { return sigOf([BOSS, MONSTERS.guardian, SPAWNS.filter(s => MONSTERS[s.type].boss)]); }
+function bossChoose(m, p, fx) {
+  const B = m.boss, far = Math.abs(p.x - m.x) > 260;
+  let opts = (far ? ['charge', 'volley', 'charge', 'slam'] : ['slam', 'slam', 'volley', 'charge']).filter(o => o !== B.last);
+  const a = pick(opts);
+  B.last = a; B.st = 'tele'; B.tele = a;
+  B.t = B.teleMax = (a === 'charge' ? 0.85 : a === 'slam' ? 0.95 : 0.75) / (B.phase === 2 ? 1.3 : 1);
+  B.rep = a === 'charge' && B.phase === 2 ? 2 : 1;
+  m.face = p.x < m.x ? -1 : 1; m.vx = 0;
+  fx(m, 'warn', p);
+}
+function bossAct(m, p, fx) {
+  const B = m.boss, ph2 = B.phase === 2;
+  if (B.tele === 'charge') { B.st = 'charge'; B.t = 0.95; fx(m, 'charge', p); }
+  else if (B.tele === 'slam') {
+    B.st = 'recover'; B.t = 0.85;
+    fx(m, 'wave', { ph2 });
+    if (ph2) B.q.push({ t: 0.5, k: 'wave', ph2 });   // 狂暴化：0.5 秒後再震一次
+  } else if (B.tele === 'volley') {
+    B.st = 'recover'; B.t = 1;
+    const n = ph2 ? 7 : 5, ox = m.x + m.face * 30, oy = m.y - 96;
+    const base = Math.atan2((p.y - 28) - oy, p.x - ox);
+    for (let i = 0; i < n; i++) B.q.push({ t: i * 0.09, k: 'orb', ox, oy, a: base + (i - (n - 1) / 2) * 0.17, spd: BOSS.orbSpd * (ph2 ? 1.15 : 1) });
+  }
+  B.tele = null;
+}
+// 活著的 Boss 前進 dt 秒（p = 目標玩家 { x, y, dead }；eng = 祭壇內有沒有活著的玩家）
+function bossStep(m, dt, p, eng, fx) {
+  const d = m.d, mhp = m.mhp || d.hp;
+  if (!m.boss) bossInit(m);
+  let B = m.boss;
+  m.anim += dt; m.chill = 0;
+  m.spawnFx = Math.max(0, m.spawnFx - dt);
+  // 玩家離開祭壇（或倒下）一段時間：Boss 回復全部體力
+  if (!eng) {
+    B.away += dt;
+    if (B.away > BOSS.leash && (m.hp < mhp || B.phase > 1)) { m.hp = mhp; bossInit(m); B = m.boss; fx(m, 'reset', p); }
+  } else B.away = 0;
+  if (B.phase === 1 && m.hp <= mhp / 2) {   // 狂暴化
+    B.phase = 2; B.st = 'roar'; B.t = 1.3; B.tele = null; m.vx = 0;
+    fx(m, 'enrage', p);
+  }
+  const ph2 = B.phase === 2;
+  B.t -= dt;
+  switch (B.st) {
+    case 'idle':
+      if (eng) {
+        const dx = p.x - m.x;
+        m.face = dx < 0 ? -1 : 1;
+        m.vx = Math.abs(dx) > 110 ? m.face * d.speed * (ph2 ? 1.4 : 1) : 0;
+        if (B.t <= 0) bossChoose(m, p, fx);
+      } else {   // 走回原位
+        const hx = m.sp.x - m.x;
+        m.vx = Math.abs(hx) > 6 ? Math.sign(hx) * d.speed : 0;
+        if (m.vx) m.face = Math.sign(hx);
+      }
+      break;
+    case 'tele':
+      m.vx = 0;
+      if (B.tele === 'charge' && eng && B.t > B.teleMax * 0.4) m.face = p.x < m.x ? -1 : 1;   // 預兆前半段仍會轉向玩家
+      if (B.t <= 0) bossAct(m, p, fx);
+      break;
+    case 'charge':
+      m.vx = m.face * BOSS.charge * (ph2 ? 1.2 : 1);
+      fx(m, 'chargep', p);
+      if (B.t <= 0 || (m.face < 0 && m.x <= m.minX + 1) || (m.face > 0 && m.x >= m.maxX - 1)) {
+        m.vx = 0; fx(m, 'chargeEnd', p);
+        if (--B.rep > 0 && eng) { B.st = 'tele'; B.tele = 'charge'; B.t = B.teleMax = 0.5; m.face = p.x < m.x ? -1 : 1; fx(m, 'warn', p); }
+        else { B.st = 'recover'; B.t = 0.75; }
+      }
+      break;
+    default:   // recover / roar
+      m.vx = 0;
+      if (B.t <= 0) { B.st = 'idle'; B.t = ph2 ? rand(0.8, 1.3) : rand(1.4, 2.1); }
+  }
+  m.x = clamp(m.x + m.vx * dt, m.minX, m.maxX);
+  m.y = GROUND_Y; m.onGround = true;
+  // 延遲的招式：狂暴化的第二次震波、霧彈一顆一顆射出
+  if (B.q.length) {
+    for (const e of B.q) { e.t -= dt; if (e.t <= 0) fx(m, e.k, e); }
+    B.q = B.q.filter(e => e.t > 0);
+  }
+}
+
 export {
-  WORLD_W, WORLD_H, GROUND_Y, TOWN_X, ARENA_X, FROST_X, ICE_X, zoneL, zoneR, GRAV, PHYS, rand, randi, clamp, approach, MONSTERS, PLATFORMS, SPAWNS, makeMonster, resetMonster, mobSig, landOn, mobStep, mobKnock, MSKILL, FLY_H,
+  WORLD_W, WORLD_H, GROUND_Y, TOWN_X, ARENA_X, FROST_X, ICE_X, zoneL, zoneR, GRAV, PHYS, rand, randi, clamp, approach, MONSTERS, PLATFORMS, SPAWNS, makeMonster, resetMonster, mobSig, landOn, mobStep, mobKnock, MSKILL, FLY_H, BOSS, inArena, bossInit, bossStep, bossSig,
 };
