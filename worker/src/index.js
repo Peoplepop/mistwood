@@ -8,6 +8,7 @@ import { originAllowed } from './origin.js';
 
 export { Channel } from './channel.js';
 export { Lobby } from './lobby.js';
+export { PartyHub } from './partyhub.js';
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },

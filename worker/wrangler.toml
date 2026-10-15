@@ -13,10 +13,19 @@ class_name = "Channel"
 name = "LOBBY"        # 全域一個（idFromName('lobby')）：各頻道人數
 class_name = "Lobby"
 
+[[durable_objects.bindings]]
+name = "PARTY"        # 全域一個（idFromName('hub')）：組隊（隊伍、成員、邀請；第七階段）
+class_name = "PartyHub"
+
 # SQLite 儲存的 Durable Object（免費方案可用）
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Channel", "Lobby"]
+
+# 第七階段：新增組隊中心（第一次部署這一版時 wrangler 會自動套用這個 migration）
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PartyHub"]
 
 [vars]
 # 額外允許連線的網頁來源（逗號分隔），例如 "https://example.com"

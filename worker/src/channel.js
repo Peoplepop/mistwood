@@ -14,8 +14,11 @@
 //                                         hp = HP 百分比、e = 技能／攻擊／受傷的特效事件（格式見 fx.js；舊版前端沒有這兩個欄位）
 //     {t:'chat', q, text}                 聊天（q = 前端自訂的請求編號，回覆時帶回）
 //     {t:'h', h:[[怪物 id, 傷害, 方向, 爆擊?1:0, 緩速秒數?], ...]}   打中伺服器的怪物（6-2）／Boss（6-3）
+//     {t:'p', q, op, id?, ok?}            隊伍指令（第七階段；hello 帶 pty:1 的前端才能用）：
+//                                         inv 邀請／ans 回覆邀請（ok 1/0）／leave 退出／kick 踢人／lead 轉移隊長
 //   伺服器 → 前端
-//     {t:'welcome', ch, nch, cap, me, name, lv, online, total, chans, players, chat, now, mobs, msig, boss, bsig}
+//     {t:'welcome', ch, nch, cap, me, name, lv, online, total, chans, players, chat, now, mobs, msig, boss, bsig, party}
+//                                         party = 組隊協定版本（0 = 不支援，前端隱藏組隊功能；第七階段）
 //                                         mobs = 怪物同步的協定版本（0 = 不支援，前端用本機怪物）、msig = 怪物資料指紋
 //                                         boss = Boss 同步的協定版本（0 = 不支援，前端用本機 Boss）、bsig = Boss 資料指紋
 //     {t:'m', n, u, g?, e?}               怪物快照（只送有變化、左右約 1500 內的怪；格式見 mobworld.js／index.html 的 MN；
@@ -27,7 +30,8 @@
 //     {t:'leave', id}                     玩家離開頻道
 //     {t:'chat', msg:{id, uid, name, text, ts}}
 //     {t:'chans', chans, online, total}   各頻道人數有變化
-//     {t:'r', q, ok, msg?, error?}        回覆聊天請求
+//     {t:'r', q, ok, msg?, error?}        回覆聊天請求／隊伍指令
+//     {t:'pu', p} {t:'pi', ...} {t:'pe', ...}   隊伍快照／收到邀請／隊伍事件（由 PartyHub 經 partyPush 送來，格式見 party.js 與 docs/PHASE7.md）
 //     {t:'err', code, msg}                錯誤（之後伺服器會關閉連線，關閉代碼見 config.js 的 CLOSE）
 import { DurableObject } from 'cloudflare:workers';
 import {
@@ -39,6 +43,8 @@ import { parseState } from './state.js';
 import { prepareChat, CHAT_GAP_MS, CHAT_BURST, CHAT_BURST_WINDOW_MS } from './chat.js';
 import { MobWorld, MOB_PROTO, MOB_SIG, BOSS_PROTO, BOSS_SIG, ACTIVE_MS, maxHit } from './mobworld.js';
 import { parseFx, psPlayersFor, FX_QUEUE, FX_RATE } from './fx.js';
+import { PARTY_PROTO, OPS as PARTY_OPS } from './party.js';
+import { FROST_X } from './mobs.gen.js';
 
 // ---- 怪物（6-2） ----
 const MOB_SYNC = true;         // false = 不提供伺服器怪物（welcome 的 mobs = 0，前端照舊用本機怪物）
@@ -48,7 +54,15 @@ const IDLE_STOP_MS = 5000;     // 沒有活躍玩家（附近沒有需要模擬�
 const HIT_RATE = [48, 24];     // 命中的令牌桶（每位玩家）：最多連續 48 次，每秒補 24 次（超過的命中直接丟掉）
 const HITS_PER_MSG = 24;       // 一則訊息最多幾次命中
 
+// ---- 組隊（第七階段） ----
+const PARTY_SYNC = true;       // false = 不提供組隊（welcome 的 party = 0，前端隱藏組隊功能；已在隊伍中的資料保留在 PartyHub）
+const PARTY_RATE = [6, 1];     // 隊伍指令的令牌桶（每位玩家）：最多連續 6 次，每秒補 1 次
+const PARTY_SYNC_EVERY = 3;    // 每幾次定時工作（10 秒一次）向 PartyHub 回報一次在線的組隊玩家（= 30 秒）
+const zoneOf = x => (x >= FROST_X ? 1 : 0);
+const newConn = () => crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+
 const fxFields = () => ({ ev: [], etok: FX_RATE[0], etMs: Date.now() });
+const partyFields = () => ({ ptok: PARTY_RATE[0], ptMs: Date.now() });
 const send = (ws, obj) => { try { ws.send(typeof obj === 'string' ? obj : JSON.stringify(obj)); } catch (e) { /* 連線已關閉 */ } };
 
 export class Channel extends DurableObject {
@@ -68,6 +82,8 @@ export class Channel extends DurableObject {
     this.tickTimer = null;
     this.lastTick = 0;
     this.idleMs = 0;
+    this.partyOn = PARTY_SYNC && !!env.PARTY;   // wrangler.toml 沒有 PARTY binding（例如舊設定）時自動關閉
+    this.syncN = 0;
 
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     ctx.blockConcurrencyWhile(async () => {
@@ -79,7 +95,7 @@ export class Channel extends DurableObject {
     // 從休眠醒來：依每條連線的 attachment 重建玩家清單
     for (const ws of ctx.getWebSockets()) {
       const a = ws.deserializeAttachment();
-      if (a && a.uid) this.players.set(a.uid, { ...a, ws, chatTs: [], tok: STATE_RATE[0], tokMs: Date.now(), ...this.mobFields(a.bo), ...fxFields() });
+      if (a && a.uid) this.players.set(a.uid, { ...a, ws, chatTs: [], tok: STATE_RATE[0], tokMs: Date.now(), ...this.mobFields(a.bo), ...fxFields(), ...partyFields() });
     }
   }
 
@@ -111,6 +127,7 @@ export class Channel extends DurableObject {
     if (d.t === 's') this.onState(P, d);
     else if (d.t === 'h') this.onHits(P, d);
     else if (d.t === 'chat') this.onChat(P, d);
+    else if (d.t === 'p') await this.onParty(P, d);
   }
 
   async webSocketClose(ws, code) {
@@ -133,6 +150,7 @@ export class Channel extends DurableObject {
     if (!P || P.ws !== ws) return;
     this.players.delete(a.uid);
     this.dirty.delete(a.uid);
+    if (P.pty) this.hubCall(h => h.offline(P.uid, P.conn));
     this.broadcast({ t: 'leave', id: a.uid });
     this.reportLobby();
     if (!this.players.size) this.stopTick();
@@ -155,8 +173,10 @@ export class Channel extends DurableObject {
     }
     const now = Date.now();
     const bo = !!(MOB_SYNC && BOSS_SYNC && d.ms === MOB_SIG && d.bs === BOSS_SIG);   // 這位玩家使用伺服器的 Boss
+    const pty = this.partyOn && d.pty === 1;   // 前端支援組隊（舊版前端沒有 pty：不能組隊、不會被邀請）
     const P = { ws, uid: tk.uid, name: tk.name, lvmax: tk.lvmax, s, emMs: s.em >= 0 ? now : 0, ts: now, bo,
-      chatTs: [], tok: STATE_RATE[0], tokMs: now, ...this.mobFields(bo), ...fxFields() };
+      pty, conn: pty ? newConn() : '', pid: null, pm: [],
+      chatTs: [], tok: STATE_RATE[0], tokMs: now, ...this.mobFields(bo), ...fxFields(), ...partyFields() };
     this.players.set(P.uid, P);
     this.persist(P);
     const others = [];
@@ -168,7 +188,9 @@ export class Channel extends DurableObject {
       players: others, chat: this.recentChat(now), now: Date.now(),
       mobs: MOB_SYNC ? MOB_PROTO : 0, msig: MOB_SYNC ? MOB_SIG : '',
       boss: MOB_SYNC && BOSS_SYNC ? BOSS_PROTO : 0, bsig: MOB_SYNC && BOSS_SYNC ? BOSS_SIG : '',
+      party: this.partyOn ? PARTY_PROTO : 0,
     });
+    if (pty) this.hubCall(h => h.online(this.partyInfo(P)));   // welcome 之後才送（隊伍快照一定比 welcome 晚到）
     this.broadcastChans(P);  // 其他玩家：頻道人數 +1
     this.markDirty(P.uid);   // 其他玩家會在下一次廣播看到新玩家
     this.startTick();
@@ -184,7 +206,11 @@ export class Channel extends DurableObject {
     const s = parseState(d, P.lvmax);
     if (!s) return;
     if (s.en !== P.s.en) P.emMs = s.em >= 0 ? now : 0;   // 表情序號有變才更新開始時間
+    const old = P.s;
     P.s = s; P.ts = now;
+    if (P.pty && (zoneOf(old.x) !== zoneOf(s.x) || old.lv !== s.lv || old.job !== s.job)) {   // 隊友的隊伍視窗要更新
+      this.hubCall(h => h.loc(P.uid, P.conn, { z: zoneOf(s.x), lv: s.lv, job: s.job }));
+    }
     this.onFx(P, d.e, now);
     this.persist(P);
     this.markDirty(P.uid);
@@ -193,7 +219,8 @@ export class Channel extends DurableObject {
 
   /** 休眠前需要保留的資料放在連線的 attachment（上限 2KB） */
   persist(P) {
-    P.ws.serializeAttachment({ uid: P.uid, name: P.name, lvmax: P.lvmax, s: P.s, emMs: P.emMs, ts: P.ts, bo: P.bo });
+    P.ws.serializeAttachment({ uid: P.uid, name: P.name, lvmax: P.lvmax, s: P.s, emMs: P.emMs, ts: P.ts, bo: P.bo,
+      pty: P.pty, conn: P.conn, pid: P.pid, pm: P.pm });
   }
 
   playerJson(P, now) {
@@ -315,6 +342,7 @@ export class Channel extends DurableObject {
       if (a && a.pending && now - a.at > HELLO_TIMEOUT_MS) this.reject(ws, CLOSE.TIMEOUT, 'timeout', '連線逾時');
     }
     await this.reportLobby();
+    if (++this.syncN % PARTY_SYNC_EVERY === 0) this.partySync();
     if (this.ctx.getWebSockets().length) await this.ctx.storage.setAlarm(Date.now() + LOBBY_REPORT_MS);
   }
 
@@ -392,5 +420,69 @@ export class Channel extends DurableObject {
         send(Q.ws, msg);
       }
     }
+  }
+
+  // ---------- 組隊（第七階段） ----------
+  // 隊伍狀態在 PartyHub（全域一個）；這裡只轉送指令、在線狀態，並把 Hub 送來的訊息交給玩家。
+  // Hub 連不上時指令回「隊伍伺服器忙碌」，打怪、聊天、Boss 都不受影響。
+  hub() { return this.env.PARTY.get(this.env.PARTY.idFromName('hub')); }
+
+  /** 呼叫 Hub、不等結果（online／offline／loc／sync） */
+  hubCall(fn) {
+    if (!this.partyOn) return;
+    try { Promise.resolve(fn(this.hub())).catch(() => {}); } catch (e) { /* Hub 暫時連不上 */ }
+  }
+
+  partyInfo(P) {
+    return { uid: P.uid, name: P.name, lv: P.s.lv, job: P.s.job, ch: this.ch, z: zoneOf(P.s.x), conn: P.conn };
+  }
+
+  /** 每 30 秒回報目前在線的組隊玩家（Hub 重啟後靠這個恢復；也讓 Hub 清掉沒送 offline 就消失的玩家） */
+  partySync() {
+    if (!this.partyOn || !this.ch) return;
+    const list = [];
+    for (const P of this.players.values()) if (P.pty) list.push(this.partyInfo(P));
+    if (list.length) this.hubCall(h => h.sync(this.ch, list));
+  }
+
+  async onParty(P, d) {
+    const q = Number.isInteger(d.q) ? d.q : 0;
+    const reply = o => send(P.ws, { t: 'r', q, ...o });
+    if (!this.partyOn || !P.pty) { reply({ ok: false, error: '組隊功能尚未開放' }); return; }
+    const now = Date.now();
+    P.ptok = Math.min(PARTY_RATE[0], P.ptok + (now - P.ptMs) / 1000 * PARTY_RATE[1]);
+    P.ptMs = now;
+    if (P.ptok < 1) { reply({ ok: false, error: '操作太頻繁了，請稍等一下' }); return; }
+    P.ptok -= 1;
+    const op = d.op, id = Number.isInteger(d.id) && d.id > 0 ? d.id : 0;
+    if (!PARTY_OPS.has(op) || (op !== 'leave' && !id)) { reply({ ok: false, error: '指令格式錯誤' }); return; }
+    if (op === 'inv') {   // 同頻道的舊版前端：直接告訴邀請者原因
+      const T = this.players.get(id);
+      if (T && !T.pty) { reply({ ok: false, error: '對方的遊戲版本較舊，無法組隊（請對方重新整理網頁）' }); return; }
+    }
+    let r;
+    try { r = await this.hub().cmd(this.partyInfo(P), op, { id, ok: d.ok === 1 || d.ok === true }); } catch (e) { r = null; }
+    if (!r || typeof r !== 'object') reply({ ok: false, error: '隊伍伺服器忙碌，請稍後再試' });
+    else reply(r.ok ? { ok: true } : { ok: false, error: String(r.error || '操作失敗') });
+  }
+
+  /** Hub 送來的訊息：[[uid, conn, 訊息], ...]，只送給 conn 相同的連線；隊伍快照順便記在 attachment（7-2 經驗共享用） */
+  async partyPush(list) {
+    if (!Array.isArray(list)) return 0;
+    let n = 0;
+    for (const item of list) {
+      if (!Array.isArray(item)) continue;
+      const [uid, conn, msg] = item;
+      const P = this.players.get(uid);
+      if (!P || !P.pty || (conn && P.conn !== conn) || !msg || typeof msg !== 'object') continue;
+      if (msg.t === 'pu') {
+        P.pid = msg.p ? msg.p.id : null;
+        P.pm = msg.p && Array.isArray(msg.p.mem) ? msg.p.mem.map(m => m.id) : [];
+        this.persist(P);
+      }
+      send(P.ws, msg);
+      n++;
+    }
+    return n;
   }
 }
