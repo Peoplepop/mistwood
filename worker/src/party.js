@@ -3,7 +3,11 @@
 //
 // 用法：每次呼叫 online／offline／loc／sync／cmd／cleanup 之後，用 drain() 取出
 //   push：要送給玩家的訊息 [[頻道, conn, uid, 訊息], ...]（只會送給在線的玩家，conn 不符的連線由頻道丟掉）
-//   parties／users：有變化、需要寫入（或刪除 = null）storage 的隊伍與成員
+//   parties／users／invites：有變化、需要寫入（或刪除 = null）storage 的隊伍、玩家、邀請
+//
+// 保存：隊伍、玩家（隊員，以及在線或和待處理邀請有關的玩家）、邀請都寫進 storage，
+//   Hub 被回收（閒置一段時間）或重新啟動後讀回來，邀請不會因此消失；在線狀態由頻道每 30 秒的 sync 確認，
+//   超過 GHOST_MS 沒有任何頻道回報的「在線」玩家（例如部署後沒有重連）視為離線。
 //
 // 規則重點（使用者裁示，2026-10-15）
 //   - 隊伍最多 4 人；任何隊員（或未組隊者）都能邀請
@@ -21,6 +25,7 @@ export const INVITE_PER_MIN = 10;                // 每分鐘最多 10 次邀請
 export const KICK_COOLDOWN_MS = 60_000;          // 被踢者 60 秒內不能再被同隊邀請
 export const PARTY_PURGE_MS = 30 * 86_400_000;   // 全隊 30 天沒人上線 → 刪除（內部維護規則）
 export const SYNC_GRACE_MS = 5000;               // 剛上線不到 5 秒的玩家不會被 sync 判定為離線（RPC 先後順序不一定）
+export const GHOST_MS = 120_000;                 // 「在線」但 2 分鐘沒有任何頻道回報 → 視為離線（頻道意外重啟、部署）
 export const OPS = new Set(['inv', 'ans', 'leave', 'kick', 'lead']);
 
 export const ERR = {
@@ -67,19 +72,24 @@ export class PartyBook {
   constructor(rand = Math.random) {
     this.parties = new Map();   // 隊伍 id → { id, v, lead, mem: [uid（加入順序）], kicked: { uid: 冷卻到期時間 } }
     this.users = new Map();     // uid → { uid, name, lv, job, ch, z, pid, on, conn, at: 上線時間, seen: 最後在線時間 }
-    this.invites = new Map();   // 被邀請者 uid → { from: 邀請者 uid, ts }（只放記憶體）
-    this.rate = new Map();      // 邀請者 uid → 最近一分鐘內的邀請時間
+    this.invites = new Map();   // 被邀請者 uid → { from: 邀請者 uid, ts }
+    this.rate = new Map();      // 邀請者 uid → 最近一分鐘內的邀請時間（只放記憶體）
+    this.syncAt = new Map();    // uid → 最近一次 online／sync 確認在線的時間（只放記憶體；沒有就用 bootAt）
+    this.bootAt = 0;
     this.rand = rand;
     this.out = [];
     this.dirtyP = new Set();
     this.dirtyU = new Set();
+    this.dirtyI = new Set();
   }
 
   // ---------- 保存與讀取 ----------
-  /** 從 storage 讀回隊伍與成員。Hub 重新啟動時不知道誰在線上：一律當作離線，再由 online／sync 恢復 */
-  load(parties, users) {
+  /** 從 storage 讀回隊伍、玩家與邀請（在線狀態照存的；GHOST_MS 內沒有頻道確認就會改成離線） */
+  load(parties, users, invites = [], now = 0) {
+    this.bootAt = now;
     for (const p of parties) if (p && p.id && Array.isArray(p.mem)) this.parties.set(p.id, { kicked: {}, v: 0, ...p });
-    for (const u of users) if (u && u.uid) this.users.set(u.uid, { ...u, on: false, conn: '', at: 0 });
+    for (const u of users) if (u && u.uid) this.users.set(u.uid, { ...u, on: !!(u.on && u.conn), conn: u.conn || '', at: u.at || 0 });
+    for (const i of invites) if (i && this.users.has(i.to) && this.users.has(i.from)) this.invites.set(i.to, { from: i.from, ts: i.ts || 0 });
     // 成員資料和隊伍對不上的（理論上不會發生）以隊伍為準
     for (const u of this.users.values()) if (u.pid && !this.parties.has(u.pid)) { u.pid = null; this.dirtyU.add(u.uid); }
     for (const p of this.parties.values()) {
@@ -87,19 +97,26 @@ export class PartyBook {
       if (p.mem.length < 2) this.disband(p);
       else if (!p.mem.includes(p.lead)) { p.lead = p.mem[0]; this.dirtyP.add(p.id); }
     }
+    for (const [to, inv] of [...this.invites]) {   // 邀請已經不成立的（被邀請者離線或已組隊）
+      const t = this.users.get(to);
+      if (!t.on || t.pid) { this.invites.delete(to); this.dirtyI.add(to); }
+    }
     this.out = [];
   }
 
   static partyRow(p) { return { id: p.id, v: p.v, lead: p.lead, mem: [...p.mem], kicked: { ...p.kicked } }; }
-  static userRow(u) { return { uid: u.uid, name: u.name, lv: u.lv, job: u.job, ch: u.ch, z: u.z, pid: u.pid, seen: u.seen }; }
+  static userRow(u) { return { uid: u.uid, name: u.name, lv: u.lv, job: u.job, ch: u.ch, z: u.z, pid: u.pid, seen: u.seen, on: u.on, conn: u.conn, at: u.at }; }
 
   /** 取出這段時間要送出的訊息與要寫入 storage 的資料 */
   drain() {
     const parties = [...this.dirtyP].map(id => { const p = this.parties.get(id); return [id, p ? PartyBook.partyRow(p) : null]; });
-    const users = [...this.dirtyU].map(uid => { const u = this.users.get(uid); return [uid, u && u.pid ? PartyBook.userRow(u) : null]; });
+    const from = new Set([...this.invites.values()].map(i => i.from));
+    const keep = u => !!u && (u.pid || u.on || from.has(u.uid) || this.invites.has(u.uid));
+    const users = [...this.dirtyU].map(uid => { const u = this.users.get(uid); return [uid, keep(u) ? PartyBook.userRow(u) : null]; });
+    const invites = [...this.dirtyI].map(to => { const i = this.invites.get(to); return [to, i ? { to, from: i.from, ts: i.ts } : null]; });
     const push = this.out;
-    this.out = []; this.dirtyP.clear(); this.dirtyU.clear();
-    return { push, parties, users };
+    this.out = []; this.dirtyP.clear(); this.dirtyU.clear(); this.dirtyI.clear();
+    return { push, parties, users, invites };
   }
 
   // ---------- 送訊息 ----------
@@ -148,11 +165,12 @@ export class PartyBook {
     if (!u) { u = { uid, pid: null, seen: now }; this.users.set(uid, u); }
     const was = u.on ? INFO_KEYS.map(k => u[k]).join('|') : null;
     for (const k of INFO_KEYS) u[k] = info[k];
-    u.on = true; u.conn = info.conn; u.at = now; u.seen = now;
+    u.on = true; u.conn = info.conn; u.at = now; u.seen = now; u.reaped = false;
+    this.syncAt.set(uid, now);
+    this.dirtyU.add(uid);
     if (prev) this.push(uid, { t: 'pe', k: 'stale', id: uid, name: u.name }, prev);
     const p = u.pid ? this.parties.get(u.pid) : null;
     if (p) {
-      this.dirtyU.add(uid);
       if (was !== INFO_KEYS.map(k => u[k]).join('|')) this.changed(p);   // 上線（或位置不同）：隊友也要知道
       else this.sendSnap(uid);
     } else this.sendSnap(uid);
@@ -171,10 +189,10 @@ export class PartyBook {
 
   goOffline(u, now) {
     u.on = false; u.seen = now;
+    this.dirtyU.add(u.uid);
     const inv = this.invites.get(u.uid);
     if (inv) this.voidInvite(u.uid, 'off');   // 被邀請者離線：邀請作廢
     if (u.pid) {
-      this.dirtyU.add(u.uid);
       const p = this.parties.get(u.pid);
       if (p) this.changed(p);
     }
@@ -186,8 +204,8 @@ export class PartyBook {
     if (!u || !u.on || u.conn !== conn) return false;
     let diff = false;
     for (const k of ['z', 'lv', 'job']) if (d[k] !== undefined && d[k] !== u[k]) { u[k] = d[k]; diff = true; }
+    if (diff) this.dirtyU.add(uid);
     if (diff && u.pid) {
-      this.dirtyU.add(uid);
       const p = this.parties.get(u.pid);
       if (p) this.changed(p);
     }
@@ -200,12 +218,20 @@ export class PartyBook {
     for (const info of list) {
       seen.set(info.uid, info.conn);
       const u = this.users.get(info.uid);
-      if (!u || !u.conn) this.online(info, now);                    // Hub 不知道這位玩家（剛重啟）：當作上線
-      else if (u.on && u.conn === info.conn) this.loc(info.uid, info.conn, info);
+      if (!u || !u.conn || (u.reaped && u.conn === info.conn)) this.online(info, now);   // Hub 不知道這位玩家／之前被誤判離線：當作上線
+      else if (u.on && u.conn === info.conn) { this.syncAt.set(u.uid, now); this.loc(info.uid, info.conn, info); }
       // 其他情況：這位玩家已經在別的連線上線（或這條連線已經 offline）→ 忽略
     }
     for (const u of this.users.values()) {
       if (u.on && u.ch === ch && seen.get(u.uid) !== u.conn && now - u.at > SYNC_GRACE_MS) this.goOffline(u, now);
+    }
+    this.reap(now);
+  }
+
+  /** 「在線」但很久沒有任何頻道確認的玩家（所在頻道意外重啟、部署後沒有重連）→ 離線 */
+  reap(now) {
+    for (const u of this.users.values()) {
+      if (u.on && now - (this.syncAt.get(u.uid) || this.bootAt) > GHOST_MS) { this.goOffline(u, now); u.reaped = true; }
     }
     this.prune();
   }
@@ -213,7 +239,7 @@ export class PartyBook {
   /** 不在隊伍、離線、也沒有發出待處理邀請的玩家不用再記 */
   prune() {
     const from = new Set([...this.invites.values()].map(i => i.from));
-    for (const [uid, u] of this.users) if (!u.on && !u.pid && !from.has(uid) && !this.invites.has(uid)) this.users.delete(uid);
+    for (const [uid, u] of this.users) if (!u.on && !u.pid && !from.has(uid) && !this.invites.has(uid)) { this.users.delete(uid); this.syncAt.delete(uid); this.dirtyU.add(uid); }
   }
 
   // ---------- 邀請 ----------
@@ -226,7 +252,7 @@ export class PartyBook {
   voidInvite(to, why) {
     const inv = this.invites.get(to);
     if (!inv) return;
-    this.invites.delete(to);
+    this.invites.delete(to); this.dirtyI.add(to);
     if (why !== 'off' && why !== 'replaced') this.event(to, 'void', inv.from, { why });
     this.event(inv.from, 'void', to, { why });
   }
@@ -248,9 +274,10 @@ export class PartyBook {
   /** 玩家的隊伍指令。info = 發出指令的玩家（含 conn）；回傳 { ok, error? } */
   cmd(info, op, args, now) {
     if (!OPS.has(op)) return { ok: false, error: ERR.BAD };
+    this.reap(now);
     let u = this.users.get(info.uid);
     if (u && u.conn && u.conn !== info.conn && u.on) return { ok: false, error: ERR.STALE };   // 別的連線才是目前的
-    if (u && u.conn === info.conn && !u.on) return { ok: false, error: ERR.STALE };            // 這條連線已經 offline
+    if (u && u.conn === info.conn && !u.on && !u.reaped) return { ok: false, error: ERR.STALE };   // 這條連線已經 offline
     if (!u || !u.on) { this.online(info, now); u = this.users.get(info.uid); }               // Hub 剛重啟：先當作上線
     const id = args && Number.isInteger(args.id) && args.id > 0 ? args.id : 0;
     if (op !== 'leave' && !id) return { ok: false, error: ERR.BAD };
@@ -276,7 +303,7 @@ export class PartyBook {
     this.rate.get(u.uid).push(now);
     const old = this.invites.get(id);
     if (old && old.from !== u.uid) this.voidInvite(id, 'replaced');   // 新邀請取代舊的
-    this.invites.set(id, { from: u.uid, ts: now });
+    this.invites.set(id, { from: u.uid, ts: now }); this.dirtyI.add(id);
     this.sendInvite(id, u.uid);
     return { ok: true };
   }
@@ -284,7 +311,8 @@ export class PartyBook {
   answer(u, from, ok, now) {
     const inv = this.invites.get(u.uid);
     if (!inv || inv.from !== from) return { ok: false, error: ERR.NO_INVITE };
-    this.invites.delete(u.uid);
+    this.invites.delete(u.uid); this.dirtyI.add(u.uid);
+    this.dirtyU.add(from); this.dirtyU.add(u.uid);   // 邀請結束：不再需要保存的玩家資料會在 drain 時刪除
     if (!ok) { this.event(from, 'decline', u.uid); return { ok: true }; }
     if (u.pid) return { ok: false, error: ERR.ALREADY };
     const f = this.users.get(from);

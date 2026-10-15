@@ -5,8 +5,9 @@
 //   info = { uid, name, lv, job, ch, z, conn }（頻道已經檢查過）
 // 這裡 → 頻道（RPC）：Channel.partyPush([[uid, conn, 訊息], ...])，頻道只送給 conn 相同的連線
 //
-// 保存：隊伍 'p:<id>'、隊員資料 'u:<uid>' 存在 storage（休眠、回收、部署後都還在）；
-//       在線狀態與邀請只放記憶體（重新啟動時全部當作離線，由頻道的 online／sync 恢復）。
+// 保存：隊伍 'p:<id>'、玩家 'u:<uid>'（隊員、在線玩家、和待處理邀請有關的玩家）、邀請 'i:<被邀請者>' 都存在 storage，
+//       閒置被回收、部署重啟後讀回來（邀請不會因此消失）；在線狀態由頻道每 30 秒的 sync 確認，
+//       2 分鐘沒有頻道確認的「在線」玩家視為離線（見 party.js 的 GHOST_MS）。
 // 內部維護：有隊伍時每天一次 alarm，刪除全隊 30 天都沒人上線的隊伍。
 import { DurableObject } from 'cloudflare:workers';
 import { PartyBook, OPS, cleanInfo } from './party.js';
@@ -21,7 +22,8 @@ export class PartyHub extends DurableObject {
     ctx.blockConcurrencyWhile(async () => {
       const ps = await ctx.storage.list({ prefix: 'p:' });
       const us = await ctx.storage.list({ prefix: 'u:' });
-      this.book.load([...ps.values()], [...us.values()]);
+      const is = await ctx.storage.list({ prefix: 'i:' });
+      this.book.load([...ps.values()], [...us.values()], [...is.values()], Date.now());
       const d = this.book.drain();   // 讀取時修正過的資料寫回去（正常情況下是空的）
       this.save(d);
     });
@@ -73,6 +75,7 @@ export class PartyHub extends DurableObject {
     const puts = {}, dels = [];
     for (const [id, row] of d.parties) { if (row) puts['p:' + id] = row; else dels.push('p:' + id); }
     for (const [uid, row] of d.users) { if (row) puts['u:' + uid] = row; else dels.push('u:' + uid); }
+    for (const [to, row] of d.invites) { if (row) puts['i:' + to] = row; else dels.push('i:' + to); }
     const keys = Object.keys(puts);
     for (let k = 0; k < keys.length; k += 100) {
       const part = {};
@@ -106,6 +109,7 @@ export class PartyHub extends DurableObject {
 
   async alarm() {
     this.alarmOk = false;
+    this.book.reap(Date.now());   // 先把沒有頻道確認的「在線」玩家改成離線，才不會擋住清理
     this.book.cleanup(Date.now());
     await this.flush();
     if (this.book.parties.size && !this.alarmOk) { await this.ctx.storage.setAlarm(Date.now() + CLEANUP_MS); this.alarmOk = true; }

@@ -1,7 +1,7 @@
 // 組隊規則（PartyBook，第七階段 7-0）的單元測試（執行方式：在 worker 資料夾輸入 npm test）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PartyBook, ERR, PARTY_MAX, KICK_COOLDOWN_MS, PARTY_PURGE_MS, SYNC_GRACE_MS, INVITE_GAP_MS, INVITE_PER_MIN } from '../src/party.js';
+import { PartyBook, ERR, PARTY_MAX, KICK_COOLDOWN_MS, PARTY_PURGE_MS, SYNC_GRACE_MS, GHOST_MS, INVITE_GAP_MS, INVITE_PER_MIN } from '../src/party.js';
 import { cleanInfo } from '../src/party.js';
 
 const T0 = 1_800_000_000_000;
@@ -25,6 +25,7 @@ function setup(n = 0) {
   B.on = (uid, ch = 1, extra) => { B.online(info(uid, ch, extra), B.now); B.flushT(); };
   B.do = (uid, op, args = {}, conn) => {
     B.now += INVITE_GAP_MS;   // 預設每個指令間隔 3 秒，不會撞到邀請頻率限制
+    for (const x of B.users.values()) if (x.on) B.syncAt.set(x.uid, B.now);   // 模擬頻道每 30 秒的 sync（在線的人一直有被確認）
     const u = B.users.get(uid);
     const r = B.cmd({ ...info(uid, u ? u.ch : 1), ...(u ? { name: u.name, lv: u.lv, job: u.job, z: u.z } : {}), conn: conn || (u && u.conn) || 'c' + uid }, op, args, B.now);
     B.flushT();
@@ -288,50 +289,105 @@ test('loc：地圖／等級變了才推送新快照', () => {
   assert.equal(m.z, 1); assert.equal(m.lv, 13);
 });
 
-test('sync：Hub 重啟後恢復在線；頻道沒回報的玩家（超過寬限）標為離線', () => {
-  const B = setup(3);
-  B.do(1, 'inv', { id: 2 }); B.do(2, 'ans', { id: 1, ok: 1 });
-  const d = B.drain();
-  // 模擬 Hub 重啟：只剩 storage 的資料
-  const rows = { p: [...B.parties.values()].map(PartyBook.partyRow), u: [...B.users.values()].filter(u => u.pid).map(PartyBook.userRow) };
+/** 模擬 Hub 被回收後重新啟動：把 drain 寫進的 storage 讀回來 */
+function storeOf(B) {
+  const db = new Map();
+  B.applyTo = d => {
+    for (const [id, r] of d.parties) { if (r) db.set('p:' + id, r); else db.delete('p:' + id); }
+    for (const [uid, r] of d.users) { if (r) db.set('u:' + uid, r); else db.delete('u:' + uid); }
+    for (const [to, r] of d.invites) { if (r) db.set('i:' + to, r); else db.delete('i:' + to); }
+  };
+  return db;
+}
+function reboot(db, now) {
   const C = setup();
-  C.load(rows.p, rows.u);
-  assert.equal(C.users.get(1).on, false);
-  C.now = B.now;
-  C.sync(1, [info(1), info(3)], C.now); C.flushT();
-  assert.equal(C.users.get(1).on, true);
-  assert.equal(C.users.get(3).on, true);
-  assert.equal(lastPu(C.take(1)).p.lead, 1);
-  // 頻道 1 下一次回報沒有 3（頻道意外重啟，沒送 offline）
-  C.now += SYNC_GRACE_MS + 1;
-  C.sync(1, [info(1)], C.now); C.flushT();
-  assert.equal(C.users.has(3), false);
-  assert.equal(C.users.get(1).on, true);
-  // 舊連線（conn 不同）的回報不會蓋掉目前的連線
-  C.online(info(1, 2, { conn: 'new' }), C.now);
-  C.sync(1, [info(1)], C.now + SYNC_GRACE_MS + 1);
-  assert.equal(C.users.get(1).conn, 'new'); assert.equal(C.users.get(1).ch, 2);
-  void d;
+  const rows = k => [...db.entries()].filter(([key]) => key.startsWith(k)).map(([, v]) => JSON.parse(JSON.stringify(v)));
+  C.load(rows('p:'), rows('u:'), rows('i:'), now);
+  C.now = now;
+  return C;
+}
+
+test('保存：Hub 被回收後重新啟動，隊伍、在線狀態、待處理邀請都還在', () => {
+  const B = setup();
+  const db = storeOf(B);
+  const orig = B.flushT;
+  B.flushT = () => { const d = orig(); B.applyTo(d); return d; };
+  for (let i = 1; i <= 3; i++) B.on(i);
+  B.do(1, 'inv', { id: 2 }); B.do(2, 'ans', { id: 1, ok: 1 });
+  B.do(1, 'inv', { id: 3 });   // 待處理邀請
+  const C = reboot(db, B.now + 1000);
+  assert.equal(C.users.get(1).on, true); assert.equal(C.users.get(1).conn, 'c1');
+  assert.equal(C.invites.get(3).from, 1);
+  assert.deepEqual(C.do(3, 'ans', { id: 1, ok: 1 }), { ok: true });   // 重啟後仍可接受
+  assert.deepEqual(C.party(1).mem, [1, 2, 3]);
+  // 只有邀請、沒有隊伍的離線玩家：邀請結束後 storage 也刪掉
+  const D = setup();
+  const db2 = storeOf(D);
+  const o2 = D.flushT;
+  D.flushT = () => { const d = o2(); D.applyTo(d); return d; };
+  D.on(5); D.on(6);
+  D.do(5, 'inv', { id: 6 });
+  D.offline(5, 'c5', D.now); D.flushT();
+  assert.ok(db2.has('u:5') && db2.has('i:6'));
+  D.do(6, 'ans', { id: 5, ok: 0 });
+  assert.equal(db2.has('i:6'), false);
+  assert.equal(db2.has('u:5'), false);
+  D.offline(6, 'c6', D.now); D.flushT();
+  assert.equal(db2.size, 0);
 });
 
-test('保存：drain 給出要寫入／刪除的隊伍與成員，讀回來一致', () => {
+test('sync：重啟後頻道回報恢復；頻道沒回報的玩家（超過寬限）標為離線；2 分鐘沒人確認的「在線」玩家視為離線', () => {
+  const B = setup(3);
+  B.do(1, 'inv', { id: 2 }); B.do(2, 'ans', { id: 1, ok: 1 });
+  // Hub 不知道的玩家（例如資料遺失）：sync 時當作上線
+  const C = setup();
+  C.sync(1, [info(7)], C.now); C.flushT();
+  assert.equal(C.users.get(7).on, true);
+  // 頻道 1 下一次回報沒有 3（頻道意外重啟，沒送 offline）
+  B.now += SYNC_GRACE_MS + 1;
+  B.sync(1, [info(1), info(2)], B.now); B.flushT();
+  assert.equal(B.users.has(3), false);
+  // 舊連線（conn 不同）的回報不會蓋掉目前的連線
+  B.online(info(1, 2, { conn: 'new' }), B.now);
+  B.sync(1, [info(2), info(1)], B.now + SYNC_GRACE_MS + 1);
+  assert.equal(B.users.get(1).conn, 'new'); assert.equal(B.users.get(1).ch, 2);
+  // 頻道 2 從此沒有再回報（例如部署後沒有重連）：2 分鐘後 1 視為離線，隊友收到新快照
+  B.flushT(); B.inbox.clear();
+  B.sync(1, [info(2)], B.now + GHOST_MS + 10); B.flushT();
+  assert.equal(B.users.get(1).on, false);
+  assert.equal(B.users.get(1).reaped, true);
+  assert.equal(lastPu(B.take(2)).p.mem.find(m => m.id === 1).on, false);
+  // 被誤判的玩家其實還在：頻道下一次回報（或發出指令）就恢復
+  B.sync(2, [info(1, 2, { conn: 'new' })], B.now + GHOST_MS + 20); B.flushT();
+  assert.equal(B.users.get(1).on, true);
+  // 真的 offline 過的連線，晚到的 sync 不會讓它復活
+  B.offline(2, 'c2', B.now + GHOST_MS + 30);
+  B.sync(1, [info(2)], B.now + GHOST_MS + 40);
+  assert.equal(B.users.get(2).on, false);
+});
+
+test('保存：drain 給出要寫入／刪除的資料，讀回來一致', () => {
   const B = setup(3);
   B.do(1, 'inv', { id: 2 });
   let d = B.last;
-  assert.deepEqual(d.parties, []); assert.deepEqual(d.users, []);   // 只有邀請：不用寫 storage
+  assert.deepEqual(d.parties, []);
+  assert.deepEqual(d.invites, [[2, { to: 2, from: 1, ts: B.now }]]);
   B.do(2, 'ans', { id: 1, ok: 1 });
   d = B.last;
   assert.equal(d.parties.length, 1);
+  assert.deepEqual(d.invites, [[2, null]]);
   const row = d.parties[0][1];
   assert.deepEqual(row.mem, [1, 2]); assert.equal(row.lead, 1);
-  assert.deepEqual(d.users.map(([uid, r]) => [uid, r.pid === row.id, 'on' in r]).sort(), [[1, true, false], [2, true, false]]);
+  assert.deepEqual(d.users.map(([uid, r]) => [uid, r.pid === row.id, r.on]).sort(), [[1, true, true], [2, true, true]]);
   const C = setup();
-  C.load(d.parties.map(x => x[1]), d.users.map(x => x[1]));
-  assert.deepEqual(C.snapshot(C.parties.get(row.id)).mem.map(m => [m.id, m.name, m.on]), [[1, 'P1', false], [2, 'P2', false]]);
+  C.load(d.parties.map(x => x[1]), d.users.map(x => x[1]), [], B.now);
+  assert.deepEqual(C.snapshot(C.parties.get(row.id)).mem.map(m => [m.id, m.name, m.on]), [[1, 'P1', true], [2, 'P2', true]]);
   B.do(2, 'leave');
   d = B.last;
   assert.deepEqual(d.parties, [[row.id, null]]);
-  assert.deepEqual(d.users.map(x => x[1]), [null, null]);
+  assert.deepEqual(d.users.map(x => !!x[1]), [true, true]);   // 兩人都還在線：保留在線資料
+  B.offline(1, 'c1', B.now); B.offline(2, 'c2', B.now); B.flushT();
+  assert.deepEqual(B.last.users.map(x => x[1]), [null, null]);
 });
 
 test('保存：讀回壞資料時修正（成員對不上、剩 1 人就解散）', () => {
