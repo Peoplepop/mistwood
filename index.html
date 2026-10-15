@@ -67,6 +67,9 @@ body.touch #tctl{display:block}
 #joy i{position:absolute;left:50%;top:50%;border-radius:50%;background:rgba(255,255,255,calc(var(--ta) + .2));border:1.5px solid rgba(255,255,255,.6);box-shadow:0 0 8px rgba(0,0,0,.35)}
 .ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,14,12,.66);z-index:10;padding:16px}
 .ov.show{display:flex}
+.ov.play{z-index:30;background:rgba(8,14,12,.88)}
+.play .card h2{font-size:22px;color:#f3c45a;letter-spacing:2px;text-shadow:0 2px 0 #5a3a06}
+.play .card .btn:disabled{background:#323d37;color:#76857c;border-color:#26302b;box-shadow:none;cursor:default}
 .card{background:linear-gradient(#2c3d33,#1a241f);border:2px solid #6f917b;border-radius:14px;padding:18px 20px;max-width:440px;width:100%;max-height:100%;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.55);text-align:center;line-height:1.5}
 .card h1{margin:0;font-size:30px;color:#f3c45a;letter-spacing:6px;text-shadow:0 2px 0 #5a3a06}
 .card h2{margin:0 0 6px;font-size:28px;color:#ff8a7e;letter-spacing:4px}
@@ -302,6 +305,13 @@ body.touch .chatbar{left:calc(6px + env(safe-area-inset-left));bottom:calc(6px +
     <p class="note"><b>確定要重置進度嗎？</b>這台裝置上的進度會全部清除，無法復原。<br>若已登入雲端帳號，<b>雲端存檔也會在下次同步時（約數秒內）被新的進度覆蓋</b>；帳號不會登出。</p>
     <div class="acts2" style="justify-content:center"><button class="sb red" id="resetYes">確定重置</button><button class="sb alt" id="resetNo">取消</button></div>
   </div>
+</div></div>
+
+<div id="playOv" class="ov play" role="dialog" aria-modal="true" aria-labelledby="playH"><div class="card">
+  <h2 id="playH"></h2>
+  <p class="note" id="playMsg"></p>
+  <button class="btn" id="playBtn"></button>
+  <p class="tip" id="playTip"></p>
 </div></div>
 
 <div id="death" class="ov"><div class="card">
@@ -834,6 +844,7 @@ function releaseAll() {
 const isTyping = t => !!t && ((t.tagName === 'INPUT' && !/^(checkbox|range|radio|button|submit)$/.test(t.type)) || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 const paused = () => SETTINGS.pause && uiBusy();   // 開視窗時是否暫停遊戲
 addEventListener('keydown', e => {
+  if (PLAY.st !== 'run') return;   // 其他分頁／裝置在玩（遮罩上的按鈕照常可以用 Enter／空白鍵按）
   if (isTyping(e.target)) {
     if (e.code === 'Escape') { e.preventDefault(); e.target.blur(); closeWin(); }
     return;
@@ -4192,10 +4203,10 @@ function saveState() {
 // 避免登出後把帳號角色當成訪客進度註冊到新帳號（複製角色）。
 const slotKey = user => user ? SAVE_KEY + '@' + user.toLowerCase() : SAVE_KEY;   // 帳號名稱不分大小寫
 const curUser = () => CLOUD.token && CLOUD.user ? CLOUD.user : '';
-function writeLocal(s) { try { localStorage.setItem(slotKey(curUser()), JSON.stringify(s)); } catch (e) {} G.savedAt = s.savedAt || 0; }
+function writeLocal(s) { if (!playSaveOk()) return; try { localStorage.setItem(slotKey(curUser()), JSON.stringify(s)); } catch (e) {} G.savedAt = s.savedAt || 0; }
 // 本機存檔；登入雲端時順便排程上傳（sync = true 表示重要事件，盡快上傳）
 function persist(sync) {
-  if (!G.player || CLOUD.switching) return;   // 登入切換角色期間不存檔，避免寫進錯的存檔格
+  if (!G.player || CLOUD.switching || !playSaveOk()) return;   // 登入切換角色期間不存檔，避免寫進錯的存檔格；其他地方在玩時也不存
   writeLocal(saveState());
   cloudQueue(sync === true);
 }
@@ -4245,6 +4256,8 @@ const CLOUD = {
   busy: false, uploading: false, again: false, lastUpload: 0, timer: null, timerAt: 0,
   pending: null,            // 雲端與本機存檔不同時，等待玩家選擇：{ save, at }
   switching: false,         // 剛登入、還在決定要用哪個角色（期間不存檔）
+  sid: '', noClaim: false, claiming: null,   // 遊玩工作階段（POST /api/claim 取得；存檔、票券、在線回報都帶著）；noClaim：舊版後端不支援
+  preferCloud: false,       // 在其他裝置玩過後按「在這裡繼續」：開啟時直接用雲端存檔（另見 playStale）
   form: { user: '', pass: '' }, msg: '', msgOk: false,
   rank: { by: 'level', data: {}, loading: false, err: '', errT: 0, unsup: false },   // unsup：舊版後端不支援 Boss 排行榜
 };
@@ -4276,7 +4289,7 @@ async function api(method, path, body) {
     } catch (e) {
       throw { offline: true, msg: e && e.name === 'AbortError' ? '連線逾時' : '無法連線到雲端伺服器' };
     }
-    if (!res.ok) throw { status: res.status, msg: (data && data.error) || `伺服器錯誤（${res.status}）` };
+    if (!res.ok) throw { status: res.status, msg: (data && data.error) || `伺服器錯誤（${res.status}）`, code: data && typeof data.code === 'string' ? data.code : '' };
     if (!data || typeof data !== 'object') throw { offline: true, msg: '伺服器回應格式錯誤' };
     return data;
   } finally { clearTimeout(timer); }
@@ -4287,6 +4300,7 @@ function cloudRefresh() { if (G.ui.win === 'account' || G.ui.win === 'rank') ren
 function fmtTime(ms) { if (!ms) return '—'; try { return new Date(ms).toLocaleString('zh-TW', { hour12: false }); } catch (e) { return '—'; } }
 // 連線失敗：token 失效就登出；連不上時只在狀態改變時提示一次
 function cloudFail(e) {
+  if (superseded(e)) { playPause('device'); return; }   // 這個帳號已在其他裝置開始遊玩
   if (e && e.status === 401 && CLOUD.token) { cloudSignedOut('登入已過期，已回到訪客角色；按 L 重新登入即可繼續', false); return; }
   const was = CLOUD.state;
   CLOUD.state = e && e.offline ? 'offline' : 'error';
@@ -4300,7 +4314,7 @@ function cloudOk() {
 }
 // 上傳目前進度（同時寫入本機，讓兩邊的存檔時間一致）
 async function cloudUpload() {
-  if (!cloudOn() || CLOUD.pending || !G.player) return false;
+  if (!cloudOn() || CLOUD.pending || !G.player || !playSaveOk()) return false;
   if (CLOUD.uploading) { CLOUD.again = true; return false; }
   clearTimeout(CLOUD.timer); CLOUD.timer = null;
   CLOUD.uploading = true; CLOUD.lastUpload = Date.now();
@@ -4308,7 +4322,8 @@ async function cloudUpload() {
   writeLocal(s);
   let ok = false;
   try {
-    await api('PUT', '/api/save', { save: s });
+    if (!CLOUD.sid && !CLOUD.noClaim) await cloudClaim();   // 開啟時沒連上雲端：先取得遊玩工作階段
+    await api('PUT', '/api/save', { save: s, sid: CLOUD.sid || undefined });
     ok = true; cloudOk(); CLOUD.lastSync = Date.now(); cloudSaveToken();
   } catch (e) { cloudFail(e); }
   CLOUD.uploading = false;
@@ -4318,7 +4333,7 @@ async function cloudUpload() {
 }
 // 排程上傳：一般存檔與上次上傳至少間隔 30 秒；重要事件（force）約 1.5 秒後上傳
 function cloudQueue(force) {
-  if (!cloudOn() || CLOUD.pending) return;
+  if (!cloudOn() || CLOUD.pending || !playSaveOk()) return;
   const wait = force ? 1500 : Math.max(0, CLOUD_GAP - (Date.now() - CLOUD.lastUpload));
   const at = Date.now() + wait;
   if (CLOUD.timer && CLOUD.timerAt <= at) return;   // 已經排了更早的上傳
@@ -4334,7 +4349,10 @@ function hasLocalProgress() {
 // fromGuest：剛登入、這台裝置沒有這個帳號的存檔，目前畫面上是訪客角色
 async function cloudCheck(atStartup, fromGuest) {
   let r;
-  try { r = await api('GET', '/api/save'); } catch (e) { cloudFail(e); return false; }
+  try {
+    if (!CLOUD.sid && !CLOUD.noClaim) await cloudClaim();   // 先開始遊玩工作階段（其他裝置之後的存檔會被拒絕），再讀最新的雲端存檔
+    r = await api('GET', '/api/save');
+  } catch (e) { cloudFail(e); return false; }
   if (!CLOUD.token) return false;
   if (typeof r.username === 'string' && r.username && r.username.toLowerCase() === CLOUD.user.toLowerCase()) CLOUD.user = r.username;
   cloudOk(); cloudSaveToken();
@@ -4349,6 +4367,10 @@ async function cloudCheck(atStartup, fromGuest) {
     clearGuestSave();
     if (moved) toast('已將訪客進度移到這個帳號', '#9ff0c8');
     return true;
+  }
+  if (CLOUD.preferCloud || playStale(CLOUD.user)) {   // 在其他裝置玩過後回來繼續：雲端是最新進度，直接使用（這台的舊進度不覆蓋過去）
+    CLOUD.preferCloud = false; playStale(CLOUD.user, false);
+    if (cloud && cloudAt !== G.savedAt) { cloudApply(cloud); toast('已載入雲端存檔', '#9ff0c8'); return true; }
   }
   if (!cloud) {   // 雲端還沒有存檔：直接上傳本機進度
     if (await cloudUpload() && !atStartup) toast('已將目前進度上傳到雲端', '#9ff0c8');
@@ -4406,9 +4428,10 @@ async function cloudAuth(kind) {
     const r = await api('POST', kind === 'login' ? '/api/login' : '/api/register', { username: user, password: pass });
     if (typeof r.token !== 'string' || !r.token) throw { msg: '伺服器回應格式錯誤' };
     writeLocal(saveState());   // 先存好訪客角色
-    CLOUD.token = r.token; CLOUD.user = String(r.username || user);
+    CLOUD.token = r.token; CLOUD.user = String(r.username || user); CLOUD.sid = '';
     CLOUD.form.pass = ''; CLOUD.msg = ''; CLOUD.state = ''; CLOUD.rank.data = {};
     cloudSaveToken();
+    await playSwitch();   // 這個帳號已在其他分頁開啟：請那個分頁先存檔並暫停，再讀取它留下的最新存檔
     const cache = loadLocal(CLOUD.user);
     if (cache) switchChar(cache);   // 這台裝置有這個帳號的存檔：換成帳號的角色，再和雲端比對
     else CLOUD.switching = true;    // 沒有：先保留訪客角色，等讀到雲端存檔再決定
@@ -4441,10 +4464,11 @@ function cloudSignedOut(msg, ok) {
   const wasUser = !CLOUD.switching && curUser();
   if (wasUser && G.player) writeLocal(saveState());
   if (CLOUD.user) CLOUD.form.user = CLOUD.user;
-  CLOUD.token = null; CLOUD.user = ''; CLOUD.pending = null; CLOUD.state = ''; CLOUD.lastSync = 0; CLOUD.rank.data = {};
+  CLOUD.token = null; CLOUD.user = ''; CLOUD.sid = ''; CLOUD.pending = null; CLOUD.state = ''; CLOUD.lastSync = 0; CLOUD.rank.data = {};
   CLOUD.msg = msg; CLOUD.msgOk = ok;
   cloudSaveToken();
-  if (wasUser) switchChar(loadLocal(''));
+  // 換回訪客身分：訪客角色已在其他分頁開啟時，先請那個分頁存檔並暫停（切換期間不存檔），再讀取訪客存檔
+  playSwitch().then(() => { if (wasUser && !curUser() && PLAY.st === 'run') switchChar(loadLocal('')); });
   toast(msg, ok ? '#d8cfb4' : '#ffb3a8');
   cloudRefresh();
   netWake();
@@ -4469,6 +4493,230 @@ async function rankLoad(by) {
 function cloudInit() {   // 登入資訊在 start() 讀取存檔前就先載入（決定要讀哪一格存檔）
   if (cloudOn()) cloudCheck(true);
 }
+// ================= 同一個角色只能在一個地方玩 =================
+// 1. 同一個瀏覽器的多個分頁：每個身分（訪客、每個帳號各一個）同時只有一個分頁在玩。
+//    用 navigator.locks 持有「遊玩鎖」（分頁關閉或當掉時瀏覽器自動釋放）；不支援時改用 localStorage 心跳。
+//    分頁之間用 BroadcastChannel 傳訊息（不支援時用 localStorage 的 storage 事件）：
+//      {t:'take', k: 身分, from: 分頁編號}   想在這裡玩：請正在玩的分頁存檔並暫停
+//      {t:'freed', k: 身分, to: 分頁編號}    已存檔並暫停（舊分頁沒回應時，等 PLAY_TAKE_MS 後直接把鎖搶過來）
+//    後開的分頁先顯示「已在其他分頁開啟」，按「在這裡玩」才接手並讀取最新存檔。
+// 2. 不同裝置／瀏覽器：登入後向後端 claim 遊玩工作階段（CLOUD.sid），存檔、票券、在線回報都帶著 sid；
+//    被別處取代（409 superseded、或即時連線被踢 4001）→ 這裡暫停，進度不會覆蓋過去。
+// 暫停時：遊戲停止、不存檔（本機與雲端）、斷開多人連線。按「在這裡玩／在這裡繼續」會重新整理頁面，
+// 用最新的存檔重新開始（不會殘留舊的連線或怪物狀態）。
+const PLAY_LOCK = 'mistwood_play@';        // 鎖名稱（localStorage 心跳也用這個鍵）＋身分
+const PLAY_MSG = 'mistwood_play_msg';      // 不支援 BroadcastChannel 時，用來傳訊息的 localStorage 鍵
+const PLAY_RESUME = 'mistwood_resume';     // sessionStorage：重新整理後要接手（'tab'）或改用雲端存檔繼續（'cloud'）
+const PLAY_TAKE_MS = 3000;                 // 接手時最多等舊分頁存檔多久（舊分頁當掉沒回應也不會卡住）
+const PLAY_SAVE_MS = 2500;                 // 舊分頁交出前存檔（含上傳雲端）最多花多久
+const PLAY_BEAT_MS = 1500, PLAY_STALE_MS = 6000;   // 備援模式：心跳間隔、多久沒心跳就當作那個分頁已關閉
+const PLAY_CHECK_MS = 60000;               // 登入時，多久沒有存檔就向後端確認一次遊玩工作階段（分頁在背景時也會檢查）
+const LOCKS = (() => { try { return navigator.locks && typeof navigator.locks.request === 'function' ? navigator.locks : null; } catch (e) { return null; } })();
+const PLAY = {
+  st: '',          // '' 尚未開始／run 遊玩中／wait 其他分頁在玩（還沒開始）／take 接手或切換身分中（不存檔）／paused 已暫停
+  why: '',         // 暫停原因：tab 其他分頁接手／device 其他裝置或瀏覽器
+  id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),   // 這個分頁的編號
+  key: '',         // 目前持有的身分：'g' 訪客／'u:帳號小寫'
+  rel: null,       // 放掉 navigator.locks 鎖的函式
+  gen: 0,          // 鎖的世代：換身分或暫停後，舊的鎖被搶走時不要誤判
+  beat: null, bc: null, waitFree: null, begin: null,
+  flush: false,    // 交出前的最後一次存檔（這段期間雖然不是 run，仍然允許存檔）
+  checkAt: 0, checking: false,
+};
+const playKey = () => curUser() ? 'u:' + curUser().toLowerCase() : 'g';
+const superseded = e => !!e && e.status === 409 && e.code === 'superseded';   // 後端：這個帳號已在其他地方開始遊玩
+const playSleep = ms => new Promise(r => setTimeout(r, ms));
+const playSaveOk = () => PLAY.flush || (PLAY.st === 'run' && playMine());   // 現在可以存檔嗎
+function playRec(key) {
+  try { const o = JSON.parse(localStorage.getItem(PLAY_LOCK + key) || 'null'); return o && typeof o.id === 'string' ? o : null; } catch (e) { return null; }
+}
+function playStamp() { try { localStorage.setItem(PLAY_LOCK + PLAY.key, JSON.stringify({ id: PLAY.id, t: Date.now() })); } catch (e) {} }
+// 備援模式：心跳紀錄被其他分頁換掉了 → 被接手（對方沒等到這裡回應）
+function playMine() {
+  if (LOCKS || !PLAY.beat) return true;
+  const r = playRec(PLAY.key);
+  if (r && r.id !== PLAY.id) { clearInterval(PLAY.beat); PLAY.beat = null; playLost(); return false; }
+  return true;
+}
+function playBeat() { if (playMine()) playStamp(); }
+// 取得身分 key 的遊玩鎖；steal = 直接搶過來。回傳 Promise<true = 取得／false = 其他分頁正在玩>
+function playLock(key, steal) {
+  playUnlock();
+  const gen = PLAY.gen;
+  if (!LOCKS) {
+    const r = playRec(key);
+    if (!steal && r && r.id !== PLAY.id && Date.now() - r.t < PLAY_STALE_MS) return Promise.resolve(false);
+    PLAY.key = key; playStamp(); PLAY.beat = setInterval(playBeat, PLAY_BEAT_MS);
+    return Promise.resolve(true);
+  }
+  return new Promise(res => {
+    let got = false;
+    LOCKS.request(PLAY_LOCK + key, steal ? { steal: true } : { ifAvailable: true }, lock => {
+      if (!lock) { res(false); return; }
+      got = true;
+      if (gen !== PLAY.gen) return;   // 等待期間已經暫停或換了身分：馬上放掉
+      PLAY.key = key; res(true);
+      return new Promise(r => { PLAY.rel = r; });   // 持有到 playUnlock 或分頁關閉
+    }).catch(() => {
+      if (!got) { PLAY.key = key; res(true); return; }   // 瀏覽器不讓用鎖（例如隱私設定）：不擋玩家
+      if (gen === PLAY.gen && PLAY.rel) { PLAY.rel = null; playLost(); }   // 鎖被其他分頁搶走（這裡太久沒回應）
+    });
+  });
+}
+function playUnlock() {
+  PLAY.gen++;
+  if (PLAY.rel) { const r = PLAY.rel; PLAY.rel = null; r(); }
+  if (PLAY.beat) { clearInterval(PLAY.beat); PLAY.beat = null; playDropRec(); }
+  PLAY.key = '';
+}
+function playDropRec() {
+  if (LOCKS || !PLAY.key) return;
+  const r = playRec(PLAY.key);
+  if (r && r.id === PLAY.id) { try { localStorage.removeItem(PLAY_LOCK + PLAY.key); } catch (e) {} }
+}
+function playSend(m) {
+  m.n = Math.random();   // 讓 storage 事件每次都觸發
+  if (PLAY.bc) { try { PLAY.bc.postMessage(m); } catch (e) {} return; }
+  try { localStorage.setItem(PLAY_MSG, JSON.stringify(m)); localStorage.removeItem(PLAY_MSG); } catch (e) {}
+}
+function playMsg(m) {
+  if (!m || typeof m !== 'object' || typeof m.k !== 'string') return;
+  if (m.t === 'take' && m.from !== PLAY.id && m.k === PLAY.key && PLAY.st === 'run') playYield(String(m.from));
+  else if (m.t === 'freed' && m.to === PLAY.id && PLAY.waitFree && PLAY.waitFree.k === m.k) PLAY.waitFree.done();
+}
+// 接手：其他分頁在玩就請它存檔並暫停，等它回覆（或逾時）後把鎖拿過來
+async function playTake(key) {
+  if (await playLock(key, false)) return;
+  await new Promise(res => {
+    const done = () => { clearTimeout(timer); PLAY.waitFree = null; res(); };
+    const timer = setTimeout(done, PLAY_TAKE_MS);
+    PLAY.waitFree = { k: key, done };
+    playSend({ t: 'take', k: key, from: PLAY.id });
+  });
+  await playLock(key, true);
+}
+// 其他分頁要接手：先把進度存好（本機＋雲端），再暫停並交出
+async function playYield(from) {
+  const key = PLAY.key;
+  persist();
+  PLAY.st = 'take'; PLAY.flush = true; releaseAll();
+  await playFlushCloud();
+  PLAY.flush = false;
+  playPause('tab');
+  playSend({ t: 'freed', k: key, to: from });
+}
+async function playFlushCloud() {
+  if (!cloudOn() || CLOUD.pending || !G.player) return;
+  const end = Date.now() + PLAY_SAVE_MS;
+  while (CLOUD.uploading && Date.now() < end) await playSleep(100);   // 正在上傳的是舊進度：等它結束再傳一次
+  if (!CLOUD.uploading) await Promise.race([cloudUpload(), playSleep(Math.max(0, end - Date.now()))]);
+}
+// 登入／登出（身分改變）：放掉舊身分的鎖、拿新身分的鎖（新身分已在其他分頁玩：請它存檔並暫停）。切換期間不存檔
+async function playSwitch() {
+  const key = playKey();
+  if (PLAY.st !== 'run' || key === PLAY.key) return;
+  PLAY.st = 'take';
+  await playTake(key);
+  if (PLAY.st === 'take') PLAY.st = 'run';
+}
+function playLost() { if (PLAY.st === 'run') playPause('tab'); }
+// 暫停：停止遊戲、所有存檔與多人連線
+function playPause(why) {
+  if (PLAY.st === 'paused' || PLAY.st === 'wait' || PLAY.st === '') return;
+  PLAY.st = 'paused'; PLAY.why = why;
+  releaseAll();
+  clearTimeout(CLOUD.timer); CLOUD.timer = null;
+  playUnlock();
+  clearTimeout(NET.timer); NET.timer = null;
+  rtReset(); netClear(); NET.transport = ''; NET.st = 'paused';
+  if (NET.chatOpen) closeChat();
+  if (why === 'device') playStale(curUser(), true);   // 這台裝置上的帳號存檔已經過時：下次開啟時改用雲端存檔
+  playShow();
+}
+const PLAY_TEXT = {
+  wait: ['這個角色已在其他分頁開啟', '同一個角色同時只能在一個分頁遊玩。按「在這裡玩」，另一個分頁會先存檔並暫停，接著在這裡讀取最新進度開始。', '在這裡玩'],
+  take: ['接手中…', '正在等待另一個分頁存檔，請稍候…', '接手中…'],
+  tab: ['已暫停', '這個角色已在其他分頁開始遊玩，這裡已暫停（進度已存檔）。', '在這裡玩'],
+  device: ['已暫停', '這個帳號已在其他裝置開始遊玩，這裡已暫停（這裡的進度不會覆蓋過去）', '在這裡繼續'],
+};
+function playShow() {
+  const T = PLAY_TEXT[PLAY.st === 'paused' ? PLAY.why || 'tab' : PLAY.st] || PLAY_TEXT.take;
+  const b = $('playBtn');
+  $('playH').textContent = T[0]; $('playMsg').textContent = T[1]; b.textContent = T[2];
+  b.disabled = PLAY.st === 'take';
+  $('playTip').textContent = curUser() ? `帳號：${curUser()}` : '訪客角色（這台裝置上的進度）';
+  $('playOv').classList.add('show');
+  if (!b.disabled) { try { b.focus({ preventScroll: true }); } catch (e) {} }
+}
+// 帳號的本機存檔是否已被其他裝置取代（被取代後這台的本機存檔時間可能比雲端新，但進度是舊的，不能拿去覆蓋雲端）
+function playStale(user, set) {
+  if (!user) return false;
+  const k = 'mistwood_stale@' + user.toLowerCase();
+  try {
+    if (set === true) localStorage.setItem(k, '1');
+    else if (set === false) localStorage.removeItem(k);
+    else return localStorage.getItem(k) === '1';
+  } catch (e) {}
+  return false;
+}
+function playHide() { $('playOv').classList.remove('show'); }
+// 「在這裡玩／在這裡繼續」
+function playHere() {
+  if (PLAY.st === 'paused') {   // 已經玩過：重新整理頁面，用最新存檔重新開始
+    try { sessionStorage.setItem(PLAY_RESUME, PLAY.why === 'device' ? 'cloud' : 'tab'); } catch (e) {}
+    PLAY.st = 'take'; playShow();
+    location.reload();
+    return;
+  }
+  if (PLAY.st !== 'wait') return;
+  CLOUD.token = null; CLOUD.user = ''; cloudLoadToken();   // 等待期間其他分頁可能登入或登出了：重新讀取
+  PLAY.st = 'take'; playShow();
+  playTake(playKey()).then(() => PLAY.begin('tab'));
+}
+// 開啟遊戲時：取得遊玩鎖才開始（go 就是真正的啟動）；其他分頁正在玩就顯示遮罩
+function playInit(go) {
+  let resume = '';
+  try { resume = sessionStorage.getItem(PLAY_RESUME) || ''; sessionStorage.removeItem(PLAY_RESUME); } catch (e) {}
+  if (resume !== 'tab' && resume !== 'cloud') resume = '';
+  try { if (typeof BroadcastChannel === 'function') { PLAY.bc = new BroadcastChannel('mistwood_play'); PLAY.bc.onmessage = e => playMsg(e.data); } } catch (e) { PLAY.bc = null; }
+  addEventListener('storage', e => { if (!PLAY.bc && e.key === PLAY_MSG && e.newValue) { try { playMsg(JSON.parse(e.newValue)); } catch (err) {} } });
+  addEventListener('pagehide', playDropRec);   // 備援模式：關閉分頁時清掉心跳紀錄（navigator.locks 會自動釋放）
+  addEventListener('pageshow', e => { if (e.persisted) location.reload(); });   // 從上一頁快取還原：鎖已經不在了，重新開始
+  $('playBtn').addEventListener('click', e => { e.stopPropagation(); playHere(); });
+  PLAY.begin = r => { if (PLAY.st !== 'take' && PLAY.st !== '') return; PLAY.st = 'run'; playHide(); go(r); };
+  const key = playKey();
+  if (resume) { PLAY.st = 'take'; playShow(); playTake(key).then(() => PLAY.begin(resume)); return; }
+  playLock(key, false).then(ok => { if (ok) PLAY.begin(''); else { PLAY.st = 'wait'; playShow(); } });
+}
+// 登入時定期確認遊玩工作階段：最近有成功存檔就不用（存檔本身會檢查）；回到這個分頁時也立刻檢查一次
+function playWatch() {
+  setInterval(() => playCheck(false), 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) playCheck(true); });
+}
+async function playCheck(soon) {
+  if (PLAY.st !== 'run' || !cloudOn() || !CLOUD.sid || PLAY.checking) return;
+  if (Date.now() - Math.max(PLAY.checkAt, CLOUD.lastUpload) < (soon ? 5000 : PLAY_CHECK_MS)) return;
+  const sid = CLOUD.sid;
+  PLAY.checking = true; PLAY.checkAt = Date.now();
+  try { await api('GET', '/api/claim?sid=' + encodeURIComponent(sid)); }
+  catch (e) { if (superseded(e) && sid === CLOUD.sid) playPause('device'); }
+  PLAY.checking = false;
+}
+// 向後端開始遊玩工作階段（其他裝置／瀏覽器之前的工作階段會失效）；舊版後端沒有這個 API 就不使用。
+// 同一時間只會有一個請求（開啟時的比對與上傳同時需要時共用），避免兩次 claim 互相取代
+function cloudClaim() {
+  if (!CLOUD.claiming) {
+    const token = CLOUD.token;
+    CLOUD.claiming = api('POST', '/api/claim').then(r => {
+      if (CLOUD.token === token) CLOUD.sid = typeof r.sid === 'string' ? r.sid.slice(0, 64) : '';
+    }, e => {
+      if (e && (e.status === 404 || e.status === 405)) { CLOUD.noClaim = true; return; }
+      throw e;
+    }).finally(() => { CLOUD.claiming = null; });
+  }
+  return CLOUD.claiming;
+}
+
 // ================= 多人同步（第五階段）：在線狀態、頻道、聊天、表情 =================
 // 兩種連線方式（第六階段）：
 //   1. 即時連線（有設定 RT_URL 時優先使用）：向 PythonAnywhere 取得短效票券 → WebSocket 連到 Cloudflare Worker 的頻道，
@@ -4486,7 +4734,7 @@ const EMOTE_KEYS = { Digit3: 0, Digit4: 1, Digit5: 2, Digit6: 3, Digit7: 4, Digi
 const NET_STATES = ['idle', 'walk', 'jump', 'climb', 'prone', 'dead'];
 const NET_ACTS = ['melee', 'stab', 'shot', 'pshot', 'skill', 'heavy', 'spin', 'thrust', 'cast'];
 const NET = {
-  st: '',             // '' 連線中／ok 已連線／offline 連不上（重試中）／unsup 伺服器尚未支援／full 頻道全滿／off 雲端未設定／guest 訪客（不連線）／dup 帳號在別處連線
+  st: '',             // '' 連線中／ok 已連線／offline 連不上（重試中）／unsup 伺服器尚未支援／full 頻道全滿／off 雲端未設定／guest 訪客（不連線）／paused 已暫停（角色在其他地方遊玩）
   mode: '',           // 'u:帳號' 登入後回報自己的狀態／'g' 訪客（看不到其他玩家）
   transport: '',      // 目前使用的連線方式：'ws' 即時連線／'http' HTTP 輪詢／'' 尚未連上
   ch: 0, want: 0, nch: 10, cap: 20, online: 0, total: 0, chans: [], me: 0,
@@ -4531,7 +4779,7 @@ function netState(p) {
     job: p.job, lv: p.lv, eq, em: NET.emT > 0 ? NET.em : -1, en: NET.en, hp: hpPct(p) };
 }
 function netBody() {
-  return Object.assign(netState(G.player), { ch: NET.want || NET.ch, sw: !!NET.want, after: NET.joined ? NET.cursor : 0 });
+  return Object.assign(netState(G.player), { ch: NET.want || NET.ch, sw: !!NET.want, after: NET.joined ? NET.cursor : 0, sid: CLOUD.sid || undefined });
 }
 // 輪詢間隔：附近有其他玩家時 0.4 秒；附近沒人時移動中 1 秒、靜止 2 秒；分頁在背景時 2 秒
 function netInterval() {
@@ -4543,6 +4791,7 @@ function netInterval() {
 }
 async function netTick() {
   NET.timer = null;
+  if (PLAY.st !== 'run') { if (PLAY.st !== 'paused') netLater(500); return; }   // 已暫停：不再連線（切換身分中：稍後再試）
   if (NET.busy) return;
   if (!API.ready) { NET.st = 'off'; return; }
   const p = G.player;
@@ -4560,6 +4809,7 @@ async function netTick() {
     r = await api('POST', '/api/presence', netBody());
   } catch (e) { err = e || {}; }
   NET.busy = false;
+  if (PLAY.st === 'paused') return;
   if (mode !== (cloudOn() ? 'u:' + CLOUD.user.toLowerCase() : 'g')) { netLater(50); return; }   // 等待回應期間登入／登出了：重新來過
   if (rtLive()) { netLater(50); return; }   // 等待回應期間即時連線已經連上：丟掉這次 HTTP 的結果
   if (err) { netFail(err); return; }
@@ -4568,6 +4818,7 @@ async function netTick() {
   netLater(netInterval());
 }
 function netFail(e) {
+  if (superseded(e)) { playPause('device'); return; }
   if (e.status === 401 && CLOUD.token) { cloudFail(e); netLater(300); return; }   // 登入過期：登出後改用訪客模式
   if (e.status === 404 || e.status === 405) { NET.st = 'unsup'; netClear(); netLater(60000); return; }   // 後端還沒更新到第五階段
   if (e.status === 429) { netLater(1500); return; }
@@ -4695,7 +4946,7 @@ function netRefreshWin() { if (G.ui.win === 'social' && netWinSig() !== NET.winS
 function netStatusText() {
   if (!API.ready || NET.st === 'off') return '';
   if (NET.st === 'guest') return '多人連線：登入後可見其他玩家';
-  if (NET.st === 'dup') return '多人連線：帳號在其他地方連線中';
+  if (NET.st === 'paused') return '多人連線：已暫停';
   if (NET.st === 'offline') return '多人連線：離線（重試中）';
   if (NET.st === 'unsup') return '多人連線：伺服器尚未支援';
   if (NET.st === 'full') return '頻道全滿，稍後重試';
@@ -4761,13 +5012,14 @@ async function rtFetchTicket() {
   const mode = NET.mode;
   RT.tkBusy = true;
   try {
-    const r = await api('POST', '/api/rt-ticket');
-    if (mode !== NET.mode) return;
+    const r = await api('POST', '/api/rt-ticket', CLOUD.sid ? { sid: CLOUD.sid } : undefined);
+    if (mode !== NET.mode || PLAY.st === 'paused') return;
     if (typeof r.ticket !== 'string' || !r.ticket) throw { msg: '伺服器回應格式錯誤' };
     RT.ticket = r.ticket; RT.ticketAt = netNow();
   } catch (e) {
-    if (mode !== NET.mode) return;
+    if (mode !== NET.mode || PLAY.st === 'paused') return;
     e = e || {};
+    if (superseded(e)) { playPause('device'); return; }   // 已在其他裝置開始遊玩：連不上任何頻道
     if (e.status === 401 && CLOUD.token) { cloudFail(e); return; }
     if (rtLive()) {   // 已連上、只是換頻道要用的新票券拿不到：留在原本的頻道
       if (NET.want) { NET.want = 0; toast('切換頻道失敗，請稍後再試', '#ffb3a8'); SFX.deny(); netRefreshWin(); }
@@ -4876,9 +5128,8 @@ function rtClosed(S, code) {
   RT.pend.clear();
   if (S.live) {   // 原本正常，突然斷線
     netClear(); NET.transport = '';
-    if (code === 4001 || kind === 'replaced') {
-      NET.st = 'dup'; RT.retryAt = netNow() + 60000;
-      toast('這個帳號已在其他分頁或裝置連線，這裡暫停多人同步', '#ffb3a8');
+    if (code === 4001 || kind === 'replaced') {   // 同一個帳號在其他地方連上了頻道：這裡暫停（不再自動重連，避免兩邊互踢）
+      playPause('device'); return;
     } else {
       NET.st = ''; RT.fails = 0; RT.retryAt = netNow() + 300;   // 馬上重連
     }
@@ -5452,7 +5703,7 @@ function drawNetHud() {
   ctx.save(); ctx.font = `700 11px ${FONT}`; ctx.textAlign = 'right';
   const w = ctx.measureText(t).width + 14, x0 = x1 - w;
   ctx.fillStyle = 'rgba(14,23,20,.72)'; ctx.beginPath(); rr(x0, y, w, 18, 5); ctx.fill();
-  ctx.fillStyle = NET.st === 'ok' ? '#9ff0c8' : NET.st === 'offline' || NET.st === 'full' || NET.st === 'dup' ? '#ffb3a8' : NET.st === 'guest' ? '#bfd3c4' : '#d8cfb4';
+  ctx.fillStyle = NET.st === 'ok' ? '#9ff0c8' : NET.st === 'offline' || NET.st === 'full' || NET.st === 'paused' ? '#ffb3a8' : NET.st === 'guest' ? '#bfd3c4' : '#d8cfb4';
   ctx.fillText(t, x1 - 7, y + 13);
   ctx.restore();
   NET.hudRect = [x0, y, w, 18];
@@ -5789,7 +6040,7 @@ const WIN = {
     let h = `<div class="hd">${esc(st)}${NET.st === 'ok' ? `<span class="dim" style="font-weight:600;font-size:12px">（全部頻道共 ${NET.total} 人）</span>` : ''}</div>`;
     if (guest) h += '<div class="d dim" style="margin-bottom:6px">訪客模式：<b>登入後才能看到其他玩家</b>、進入頻道與聊天，其他玩家也才看得到你（按 L 登入）。表情仍可使用（只有自己看得到）。</div>';
     else if (NET.st === 'ok') h += `<div class="d dim" style="margin-bottom:6px">連線方式：${NET.transport === 'ws' ? (MN.on ? '即時連線（WebSocket，怪物同步）' : '即時連線（WebSocket）') : RT_URL ? '一般連線（HTTP 輪詢；即時連線暫時連不上，背景自動重試）' : '一般連線（HTTP 輪詢）'}</div>`;
-    if (NET.st === 'dup') h += '<div class="det dim">這個帳號已在其他分頁或裝置連線，這裡暫停多人同步，約 1 分鐘後自動重新連線。</div>';
+    if (NET.st === 'paused') h += '<div class="det dim">這個角色已在其他分頁或裝置遊玩，這裡已暫停多人同步。</div>';
     if (NET.st === 'unsup') h += '<div class="det dim">伺服器還沒更新到支援多人同步的版本，遊戲其他功能不受影響。</div>';
     if (NET.st === 'offline') h += '<div class="det dim">暫時連不上多人伺服器，會自動重試；遊戲與存檔不受影響。</div>';
     if (NET.st === 'ok') {
@@ -6126,7 +6377,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   if (!last) last = now;
   const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
-  const stop = G.hint || document.hidden || paused();   // 預設開視窗不暫停；設定中可改為暫停
+  const stop = G.hint || document.hidden || paused() || PLAY.st !== 'run';   // 預設開視窗不暫停；設定中可改為暫停；其他地方在玩時停止
   if (!stop) {
     acc += dt;
     let n = 0;
@@ -6143,8 +6394,13 @@ function frame(now) {
 function start(data) {
   if (G.started) return;
   G.started = true;
-  data = data || {};
-  cloudLoadToken(); slotMigrate();
+  cloudLoadToken();   // 登入資訊決定身分（訪客／帳號），也決定要讀哪一格存檔
+  playInit(resume => boot(data || {}, resume));   // 同一個角色已在其他分頁玩：先顯示遮罩，按「在這裡玩」才開始
+}
+// resume：'tab' 從其他分頁接手／'cloud' 在其他裝置玩過後回來繼續（改用雲端存檔）／'' 一般開啟
+function boot(data, resume) {
+  slotMigrate();
+  CLOUD.preferCloud = resume === 'cloud';
   const saved = data.player ? data : loadLocal(curUser());
   G.player = makePlayer(saved && saved.player);
   G.savedAt = saved && +saved.savedAt || 0;
@@ -6160,9 +6416,10 @@ function start(data) {
   setupUI();
   layout();
   updateCamera(0, true);
-  if (data.hintSeen) { G.hint = false; $('hint').classList.remove('show'); G.introShown = true; }
+  if (data.hintSeen || resume) { G.hint = false; $('hint').classList.remove('show'); G.introShown = true; }
   cloudInit();   // 已登入時在背景比對雲端存檔（失敗也不影響遊戲）
   netInit();     // 多人同步（背景輪詢；連不上時安靜地重試）
+  playWatch();   // 登入時定期確認遊玩工作階段（分頁在背景、沒有存檔時也能發現已被其他裝置取代）
   requestAnimationFrame(frame);
 }
 window.claude?.hot?.snapshot?.(() => saveState());
