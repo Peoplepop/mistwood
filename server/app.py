@@ -12,13 +12,15 @@ API 一覽（全部使用 JSON，錯誤一律回傳 {"error": "訊息"}）：
     POST /api/register                   註冊   {"username", "password"} → {"token", "username"}
     POST /api/login                      登入   {"username", "password"} → {"token", "username"}
     POST /api/logout                     登出（需要 token）
+    POST /api/claim                      開始遊玩（需要 token）：發一個新的遊玩工作階段 → {"sid", "username"}，之前的工作階段一律失效
+    GET  /api/claim?sid=...              確認遊玩工作階段是否仍有效（需要 token）→ {"ok": true}；已被取代回 409
     GET  /api/save                       讀取雲端存檔（需要 token）
-    PUT  /api/save                       上傳雲端存檔（需要 token） {"save": {...}} → {"ok", "updated_at", "ranked", "flag_reason"}
+    PUT  /api/save                       上傳雲端存檔（需要 token） {"save": {...}, "sid"} → {"ok", "updated_at", "ranked", "flag_reason"}
     GET  /api/leaderboard?by=level|kills|gold|boss&limit=20   排行榜
     POST /api/presence                   多人同步：回報自己的狀態，同時取得同頻道的其他玩家與新聊天（需要 token）
     GET  /api/presence?ch=1&after=0      訪客觀看：只讀取某個頻道的玩家與聊天（不會出現在別人畫面上）
     POST /api/chat                       頻道聊天（需要 token） {"text": "..."} → {"ok", "msg"}
-    POST /api/rt-ticket                  第六階段：即時連線票券（需要 token）→ {"ticket", "exp", "uid", "username"}
+    POST /api/rt-ticket                  第六階段：即時連線票券（需要 token） {"sid"} → {"ticket", "exp", "uid", "username"}
 
 存檔合理性檢查（第四階段）：
     存檔數值明顯超出遊戲可能範圍（例如超過等級上限、型別錯誤）→ 直接回 400，不儲存。
@@ -37,6 +39,12 @@ API 一覽（全部使用 JSON，錯誤一律回傳 {"error": "訊息"}）：
     玩家位置與聊天改走 Cloudflare Worker（WebSocket，程式在 worker/）。前端先呼叫 POST /api/rt-ticket 取得
     短效票券（HMAC-SHA256 簽章，約 5 分鐘），連上 Worker 後送出票券，Worker 用同一把密鑰驗證。
     密鑰來自環境變數 MISTWOOD_RT_SECRET（Worker 端是 RT_SECRET）；沒有設定時這個 API 回 503，前端自動改用 HTTP 輪詢。
+
+同一個帳號同時在兩個地方遊玩（遊玩工作階段）：
+    前端登入後讀取雲端存檔前先呼叫 POST /api/claim 取得 sid（每個帳號只有最後一次 claim 的 sid 有效）。
+    PUT /api/save、POST /api/rt-ticket、POST /api/presence 帶上 sid；sid 已被取代 → 回 409
+    {"error": "...", "code": "superseded"}，不寫入、不發票券，前端進入「已暫停」畫面（舊的那邊的進度不會覆蓋新的）。
+    沒帶 sid 的請求（還沒重新整理的舊版前端）照舊接受。
 
 需要登入的 API，前端要在標頭帶上：Authorization: Bearer <token>
 """
@@ -267,15 +275,27 @@ SAVES_NEW_COLUMNS = [
     ("hw_exp_ts", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
+USERS_NEW_COLUMNS = [
+    ("play_sid", "TEXT"),                           # 目前有效的遊玩工作階段（POST /api/claim 發的；NULL = 還沒 claim 過）
+    ("play_ts", "INTEGER NOT NULL DEFAULT 0"),      # 最後一次 claim 的時間（Unix 秒）
+]
+
 
 def migrate_db(db):
     """把舊版資料庫升級成最新結構（只新增欄位、不動既有資料；重複執行也沒關係）"""
-    have = {row[1] for row in db.execute("PRAGMA table_info(saves)")}   # row[1] = 欄位名稱
-    for name, decl in SAVES_NEW_COLUMNS:
+    for table, columns in (("users", USERS_NEW_COLUMNS), ("saves", SAVES_NEW_COLUMNS)):
+        migrate_table(db, table, columns)
+    db.commit()
+
+
+def migrate_table(db, table, columns):
+    """補上某個資料表缺少的欄位（table 與欄位定義都是程式內的常數，不是使用者輸入）"""
+    have = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}   # row[1] = 欄位名稱
+    for name, decl in columns:
         if name in have:
             continue
         try:
-            db.execute(f"ALTER TABLE saves ADD COLUMN {name} {decl}")
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
         except sqlite3.OperationalError as e:
             if "duplicate column" not in str(e):   # 另一個行程剛好同時補上了，忽略即可
                 raise
@@ -292,7 +312,6 @@ def migrate_db(db):
             for user_id, level in db.execute("SELECT user_id, level FROM saves").fetchall():
                 db.execute("UPDATE saves SET hw_exp = ? WHERE user_id = ?",
                            (CUM_EXP[min(max(level, 1), LEVEL_MAX)], user_id))
-    db.commit()
 
 
 def get_db():
@@ -381,7 +400,7 @@ def current_user():
     if not token or len(token) > 200:
         return None
     return get_db().execute(
-        "SELECT users.id, users.username FROM tokens JOIN users ON users.id = tokens.user_id "
+        "SELECT users.id, users.username, users.play_sid FROM tokens JOIN users ON users.id = tokens.user_id "
         "WHERE tokens.token_hash = ? AND tokens.expires_at > ?",
         (hash_token(token), now_ts()),
     ).fetchone()
@@ -399,6 +418,21 @@ def new_token(user_id):
     )
     db.commit()
     return token
+
+
+# ---- 遊玩工作階段（同一個帳號同時在兩個地方遊玩時，只有最後開始的那邊能存檔、連線） ----
+def sid_superseded(user, sid):
+    """請求有帶 sid，但不是這個帳號目前有效的遊玩工作階段 → True。
+    沒帶 sid（None 或空字串）＝還沒重新整理的舊版前端，照舊接受 → False"""
+    if sid is None or sid == "":
+        return False
+    current = user["play_sid"] or ""
+    return not (isinstance(sid, str) and current and hmac.compare_digest(sid.encode(), current.encode()))
+
+
+def superseded_error():
+    """遊玩工作階段已被取代：前端看到 code = superseded 就進入「已暫停」畫面"""
+    return jsonify(error="這個帳號已在其他地方開始遊玩", code="superseded"), 409
 
 
 # ================= CORS（允許哪些網頁呼叫這個 API） =================
@@ -667,6 +701,31 @@ def logout():
     return jsonify(ok=True)
 
 
+@app.post("/api/claim")
+def claim_play():
+    """開始遊玩：發一個新的遊玩工作階段（sid），這個帳號之前的工作階段（其他裝置／瀏覽器）全部失效"""
+    user = current_user()
+    if user is None:
+        return error("請先登入", 401)
+    sid = secrets.token_urlsafe(12)
+    db = get_db()
+    db.execute("UPDATE users SET play_sid = ?, play_ts = ? WHERE id = ?", (sid, now_ts(), user["id"]))
+    db.commit()
+    return jsonify(sid=sid, username=user["username"])
+
+
+@app.get("/api/claim")
+def check_play():
+    """確認遊玩工作階段是否仍有效（前端在背景時定期檢查，被取代就停止連線）"""
+    user = current_user()
+    if user is None:
+        return error("請先登入", 401)
+    sid = request.args.get("sid", "")
+    if not sid or sid_superseded(user, sid):
+        return superseded_error()
+    return jsonify(ok=True)
+
+
 @app.get("/api/save")
 def get_save():
     user = current_user()
@@ -688,6 +747,8 @@ def put_save():
     if data is None or not isinstance(data.get("save"), dict):
         return error("請求內容必須是 {\"save\": {...}}", 400)
     save = data["save"]
+    if sid_superseded(user, data.get("sid")):   # 這個帳號已在其他地方開始遊玩：舊的那邊不能覆蓋存檔
+        return superseded_error()
 
     text = json.dumps(save, ensure_ascii=False, separators=(",", ":"))
     if len(text.encode("utf-8")) > MAX_SAVE_BYTES:
@@ -930,6 +991,8 @@ def post_presence():
     data = read_json()
     if data is None:
         return error("請求內容必須是 JSON 物件", 400)
+    if sid_superseded(user, data.get("sid")):   # 已在其他地方開始遊玩：不再進入頻道
+        return superseded_error()
     try:
         state = parse_presence(data, presence_level_cap(user["id"]))
     except ValueError as e:
@@ -1091,10 +1154,13 @@ def sign_rt_ticket(payload, secret):
 @app.post("/api/rt-ticket")
 def rt_ticket():
     """發給登入玩家一張短效的即時連線票券。內容：uid、name、lv（雲端存檔等級）、lvmax（顯示等級上限）、
-    job（雲端存檔職業）、iat／exp（Unix 秒）。Worker 只驗證簽章與到期時間，不會再回來查資料庫"""
+    job（雲端存檔職業）、iat／exp（Unix 秒）。Worker 只驗證簽章與到期時間，不會再回來查資料庫。
+    body（可省略）：{"sid": 遊玩工作階段}；已被取代 → 409，被取代的那邊就連不上任何頻道"""
     user = current_user()
     if user is None:
         return error("請先登入", 401)
+    if sid_superseded(user, (read_json() or {}).get("sid")):
+        return superseded_error()
     secret = app.config.get("RT_SECRET") or ""
     if not secret:
         return error("即時連線尚未啟用", 503)

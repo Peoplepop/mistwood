@@ -5,11 +5,14 @@
 --       新欄位由 app.py 的 migrate_db() 用 ALTER TABLE 自動補上（新欄位的索引也要放在那裡建）。
 
 -- 玩家帳號：帳號名稱不分大小寫（COLLATE NOCASE），密碼只存雜湊值
+-- play_sid：目前有效的遊玩工作階段（POST /api/claim 發的；同一個帳號只有最後開始遊玩的那邊能存檔、連線）
 CREATE TABLE IF NOT EXISTS users (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   username   TEXT    NOT NULL UNIQUE COLLATE NOCASE,
   pw_hash    TEXT    NOT NULL,
-  created_at TEXT    NOT NULL
+  created_at TEXT    NOT NULL,
+  play_sid   TEXT,                        -- 遊玩工作階段新增
+  play_ts    INTEGER NOT NULL DEFAULT 0   -- 遊玩工作階段新增：最後一次 claim 的時間（Unix 秒）
 );
 
 -- 登入 token：只存 token 的雜湊值（資料庫外洩也無法直接拿來登入）
