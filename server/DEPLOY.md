@@ -144,6 +144,10 @@ pip install -r ~/mistwood/server/requirements.txt
 - **第六階段（即時連線票券）**：新增 `POST /api/rt-ticket`。要啟用即時連線時，在 WSGI 檔加上
   `os.environ["MISTWOOD_RT_SECRET"] = "和 Cloudflare Worker 的 RT_SECRET 相同的密鑰"`，再 `git pull` + Reload。
   沒有設定時這個 API 回 503，前端會繼續使用 HTTP 輪詢（行為和第五階段相同）。完整步驟見 `worker/README.md`。
+- **遊玩工作階段（同一個帳號不能同時在兩個地方玩）一定要做 `git pull` + Reload**：
+  - 新增 `POST /api/claim`、`GET /api/claim`；`users` 表自動補上 `play_sid`、`play_ts` 欄位（不需要手動 SQL，既有帳號不受影響）。
+  - 新版前端在舊後端上也能玩（claim 回 404 時就不使用工作階段），但要後端更新後，被取代的裝置才會停止存檔與連線。
+  - 更新後可以用瀏覽器開 https://peoplepop.pythonanywhere.com/api/claim 確認，回傳 `{"error": "請先登入"}`（401）就代表新版已經生效（舊版會是 404／405）。
 （前端 `index.html` 推到 GitHub 後，GitHub Pages 會自動更新，不需要動 PythonAnywhere。）
 
 ## 出問題時：查看 log

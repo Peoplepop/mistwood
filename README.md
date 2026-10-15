@@ -85,13 +85,15 @@ python -m pytest -q
 | POST | `/api/register` | 註冊 `{username, password}` → `{token, username}`（帳號 2～12 字：英數字、底線或中文；密碼至少 6 碼） |
 | POST | `/api/login` | 登入（10 分鐘內失敗 5 次會暫時鎖定） |
 | POST | `/api/logout` | 登出（token 失效） |
+| POST | `/api/claim` | 開始遊玩：發一個新的遊玩工作階段 → `{sid, username}`，同帳號之前的工作階段（其他裝置／瀏覽器）全部失效 |
+| GET | `/api/claim?sid=...` | 確認遊玩工作階段是否仍有效 → `{ok: true}`；已被取代回 409 |
 | GET | `/api/save` | 讀取雲端存檔 `{username, save, updated_at}` |
-| PUT | `/api/save` | 上傳存檔 `{save: {...}}`（上限 200KB） |
+| PUT | `/api/save` | 上傳存檔 `{save: {...}, sid}`（上限 200KB）；`sid` 已被取代回 409 `{error, code: "superseded"}`，沒帶 `sid`（舊版前端）照舊接受 |
 | GET | `/api/leaderboard?by=level\|kills\|gold\|boss&limit=20` | 排行榜前 N 名（`boss` = Boss 擊殺數，第四階段新增）；帶 token 時另外回傳自己的名次 `me` |
 | POST | `/api/presence` | 多人同步（需登入）：回報自己的狀態 `{ch, sw, x, y, f, st, ak, ad, an, job, lv, eq, em, en, after}`，同一次回應拿到頻道資訊 `{ch, online, total, chans, cap}`、同頻道其他玩家 `players` 與新聊天 `chat`／`cursor` |
 | GET | `/api/presence?ch=1&after=0` | 訪客觀看（唯讀、依 IP 限制頻率）。第六階段起前端已不再使用（訪客看不到其他玩家），保留給舊版前端 |
 | POST | `/api/chat` | 頻道聊天（需登入且在線上）`{text}` → `{ok, msg}` |
-| POST | `/api/rt-ticket` | 第六階段：即時連線票券（需登入）→ `{ticket, exp, uid, username}`；HMAC-SHA256 簽章、5 分鐘到期，密鑰為環境變數 `MISTWOOD_RT_SECRET`（未設定時回 503） |
+| POST | `/api/rt-ticket` | 第六階段：即時連線票券（需登入）`{sid}` → `{ticket, exp, uid, username}`；HMAC-SHA256 簽章、5 分鐘到期，密鑰為環境變數 `MISTWOOD_RT_SECRET`（未設定時回 503）；`sid` 已被取代回 409（`POST /api/presence` 也一樣） |
 
 - 排行榜數值由伺服器從雲端存檔解析（`player.lv`、`player.stats.kills`、`player.coins`、`player.stats.bossKills`），不採用前端另外送的分數；並做合理性檢查（等級 1～200、金幣與擊殺數上限），不合理的存檔會被拒絕。
 - CORS 只允許 `https://peoplepop.github.io` 與 `http://localhost:*`／`http://127.0.0.1:*`（可用環境變數 `MISTWOOD_EXTRA_ORIGINS` 增加）。
@@ -258,6 +260,12 @@ python -m pytest -q
 - 開始畫面的「**重置進度**」需要再按一次「確定重置」：只會清除這台裝置的進度，**不會登出雲端帳號**；重置後的新進度會照常同步（約數秒內），**雲端存檔會被覆蓋**，畫面上會明確提示。
 - 登入 token 存在 localStorage 的 `mistwood_cloud`，有效期 30 天。
 
+### 同一個角色只能在一個地方玩
+
+- **同一個瀏覽器的多個分頁**：每個身分（訪客、每個帳號各一個）同時只有一個分頁在玩（`navigator.locks`，不支援時改用 localStorage 心跳；分頁之間用 BroadcastChannel 或 storage 事件傳訊息）。後開的分頁顯示「這個角色已在其他分頁開啟」，不啟動遊戲、不存檔、不連線；按「**在這裡玩**」→ 舊分頁先存檔（本機＋雲端）再進入「已暫停」畫面，新分頁讀取最新存檔後開始（舊分頁沒回應時最多等約 3 秒）。已暫停的分頁也可以按「在這裡玩」搶回來（會重新整理頁面）。登入／登出換身分時也一樣。
+- **不同裝置／瀏覽器**：登入後讀取雲端存檔前先 `POST /api/claim` 取得遊玩工作階段（sid），存檔、即時連線票券、HTTP 在線回報都帶著 sid。在其他地方開始遊玩後，舊的那邊存檔／取票券會收到 409、或即時連線被踢（4001），就進入「已暫停」畫面：「這個帳號已在其他裝置開始遊玩，這裡已暫停（這裡的進度不會覆蓋過去）」。按「**在這裡繼續**」→ 重新 claim、改用雲端存檔重新開始。被取代過的帳號在這台裝置上會標記（`mistwood_stale@帳號`），下次開啟時也直接用雲端存檔，不會拿這台的舊進度覆蓋。
+- 分頁在背景、沒有存檔時，每分鐘確認一次 sid（`GET /api/claim`），回到分頁時也會立刻確認。後端連不上時照舊只用本機存檔遊玩。
+
 ### 多人同步（第五階段）
 
 - PythonAnywhere 不支援 WebSocket，所以用 **HTTP 輪詢**：前端每次 `POST /api/presence` 回報自己的狀態，同一個回應就帶回同頻道其他玩家與新聊天（一次來回）。附近有其他玩家時約每 0.4 秒一次；附近沒人時移動中 1 秒、靜止 2 秒；分頁在背景時 2 秒。自己開始移動或出手時會提前回報。
@@ -271,7 +279,7 @@ python -m pytest -q
 ### 即時連線（第六階段 6-1）
 
 - 有設定即時連線伺服器（`index.html` 的 `RT_URL_PROD`，或網址參數 `?rt=`）時，登入玩家先向 PythonAnywhere 取得短效票券（`POST /api/rt-ticket`），再用 **WebSocket** 連到 Cloudflare Worker 的頻道（`worker/`，每頻道一個 Durable Object）。位置只在有變化時回報，每秒最多 10 次；其他玩家的位置、動作、表情與聊天由伺服器即時推送（位置緩衝縮短為約 0.25 秒）。
-- 換頻道時先連上新頻道才離開舊頻道（新頻道滿了就留在原頻道）；斷線會立刻重連（票券過期會自動重取）；同一個帳號在別的分頁連進同一頻道時，舊分頁暫停多人同步 1 分鐘。
+- 換頻道時先連上新頻道才離開舊頻道（新頻道滿了就留在原頻道）；斷線會立刻重連（票券過期會自動重取）；同一個帳號在其他地方連進同一頻道時（Worker 踢掉舊連線，代碼 4001），舊的那邊進入「已暫停」畫面，不會自動重連互踢（見「同一個角色只能在一個地方玩」）。
 - **備援**：即時連線連續 2 次連不上就自動改用上面的 HTTP 輪詢，背景每 30 秒重試，連上後自動換回。後端未設定 `MISTWOOD_RT_SECRET`（票券 API 回 503）時安靜地只用 HTTP 輪詢。注意：使用即時連線與使用 HTTP 輪詢的玩家彼此看不到。
 - Worker 已部署於 `wss://mistwood-rt.b98010327.workers.dev`（2026-10-13），登入玩家預設使用 WebSocket，連不上時自動退回 HTTP 輪詢。本機測試：`?api=http://127.0.0.1:5055&rt=ws://127.0.0.1:8787`；`?rt=off` 強制停用。部署步驟見 `worker/README.md`。
 
