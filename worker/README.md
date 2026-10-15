@@ -1,12 +1,14 @@
 # 晨霧森林 即時連線伺服器（Cloudflare Worker + Durable Objects）
 
 第六階段的即時連線：玩家位置、動作、表情與頻道聊天改走 WebSocket（6-1）、伺服器權威的一般怪物同步（6-2），以及 Boss（霧之守衛）的全頻道共鬥（6-3）。
+第七階段：組隊（7-0 隊伍核心：邀請、接受／拒絕、退出、踢人、轉移隊長，可跨頻道；規劃見 `docs/PHASE7.md`）。
 帳號、雲端存檔、排行榜仍在 PythonAnywhere，不受影響。
 
 ```
 瀏覽器 ──HTTPS──▶ PythonAnywhere：POST /api/rt-ticket 取得短效票券（HMAC-SHA256，5 分鐘）
    └──WebSocket──▶ 這個 Worker /ws?ch=N ──▶ Durable Object「頻道 N」（N = 1～10，每頻道 20 人）
                                        └──▶ Durable Object「大廳」（各頻道人數）
+                         頻道 ◀──RPC──▶ Durable Object「組隊中心」PartyHub（全域一個：隊伍、邀請、隊員在哪個頻道）
 ```
 
 - `src/index.js`：入口（檢查來源網站 Origin、挑頻道、轉給頻道物件）
@@ -15,6 +17,8 @@
 - `src/mobs.gen.js`：**自動產生**，從 `../index.html` 的 `// <mobsim>` 區塊抽出的怪物資料與 AI（`npm run gen`；不要手改）
 - `src/fx.js`：其他玩家的技能特效、遠程攻擊與受傷事件（檢查、頻率限制、只轉給同一張地圖左右 1500 內的玩家；純裝飾）
 - `src/lobby.js`：大廳（各頻道人數、幫剛上線的玩家挑有空位的頻道）
+- `src/partyhub.js`：組隊中心（全域一個 DO：保存隊伍／玩家／邀請、把隊伍訊息送到隊員所在的頻道、每天清理 30 天沒人上線的隊伍）
+- `src/party.js`：組隊規則（`PartyBook`：任何隊員可邀請、邀請不逾時、離線不退隊、踢人／轉移隊長、剩 1 人解散；不依賴 Cloudflare，可直接測試）
 - `src/ticket.js`：驗證 PythonAnywhere 簽發的票券
 - `src/chat.js`、`src/state.js`：聊天過濾、狀態檢查（規則和 `server/app.py` 相同）
 
@@ -140,6 +144,10 @@ cd worker
 git pull
 npx wrangler deploy
 ```
+
+**第七階段 7-0（組隊）第一次部署**：`wrangler.toml` 新增了 `PARTY` binding 與 `[[migrations]] tag = "v2"`（`new_sqlite_classes = ["PartyHub"]`），
+`npx wrangler deploy` 會自動套用，不用其他設定；PythonAnywhere 不用更新。緊急關閉組隊：`src/channel.js` 的 `PARTY_SYNC = false` 再部署。
+之後即使要回到舊版程式，`wrangler.toml` 也要保留 `PartyHub` 類別與 v2 migration（移除 DO 類別要另寫 `deleted_classes` migration，會刪掉資料）。
 
 密鑰（`RT_SECRET`）設定一次就好；要更換時 Worker（`npx wrangler secret put RT_SECRET`）與 PythonAnywhere（WSGI 檔）兩邊要一起改，
 改完 PythonAnywhere 要 Reload。換密鑰當下已連線的玩家不受影響，重新連線時會自動取新票券。
