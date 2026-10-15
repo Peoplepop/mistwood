@@ -218,6 +218,17 @@ body.touch .chatbar{left:calc(6px + env(safe-area-inset-left));bottom:calc(6px +
 .clog .sys{color:#9fbfae}
 .clog .old{opacity:.75}
 .tb.tbc{background:rgba(40,62,96,var(--ta))}
+/* 第七階段：組隊（邀請提示、資訊卡按鈕、隊伍視窗） */
+.pinv{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:8;width:min(320px,calc(100% - 16px));display:none;background:rgba(22,32,27,.97);border:2px solid #9ff0c8;border-radius:10px;padding:8px 10px;line-height:1.4;font-size:13px;text-align:left;color:#f1ead8;box-shadow:0 8px 30px rgba(0,0,0,.55)}
+.pinv.show{display:block}
+.pinv .nm{font-weight:900;color:#9ff0c8;overflow-wrap:anywhere}
+.pinv .sub{color:#bfd3c4;font-size:12px}
+.pinv .acts2{justify-content:flex-end;margin-top:6px}
+body.touch .pinv{top:calc(8px + env(safe-area-inset-top))}
+body.touch .pinv .sb{font-size:15px;padding:8px 20px}
+.pcard .acts2{margin-top:8px;align-items:center}
+.tg.lead{background:#e6a93a;color:#2b1d07}
+.row.off{opacity:.62}
 </style>
 
 <div id="app">
@@ -235,6 +246,7 @@ body.touch .chatbar{left:calc(6px + env(safe-area-inset-left));bottom:calc(6px +
       <div id="win" class="win" role="dialog" aria-label="遊戲選單"></div>
       <div id="dlg" class="dlg" role="dialog" aria-label="NPC 對話"></div>
       <div id="pcard" class="pcard" role="dialog" aria-label="玩家資訊"></div>
+      <div id="pinv" class="pinv" role="dialog" aria-label="組隊邀請"></div>
       <div id="chatBar" class="chatbar" role="dialog" aria-label="聊天">
         <div class="cbrow"><input class="inp" id="chatIn" maxlength="60" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" aria-label="聊天訊息"><button class="sb" id="chatSend">送出</button><button class="xbtn" id="chatX" aria-label="關閉聊天">✕</button></div>
         <div class="emos" id="emoRow"></div>
@@ -852,6 +864,9 @@ addEventListener('keydown', e => {
   initAudio();
   if (G.hint) { if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); closeHint(); } return; }
   if (G.deathShown) { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); respawn(); } return; }
+  const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+  if ((e.code === 'KeyY' || e.code === 'KeyN') && plain && PT.inv && ptLive() && !PT.stale) { e.preventDefault(); if (!e.repeat) ptAnswer(e.code === 'KeyY'); return; }   // 組隊邀請
+  if (e.code === 'KeyP' && plain && ptShown() && !G.ui.dlg) { e.preventDefault(); if (!e.repeat) openWin('party'); return; }   // 隊伍視窗（組隊功能啟用時）
   if (e.code === 'Escape' && NET.card) { e.preventDefault(); NET.card = 0; renderCard(); return; }   // 先關閉玩家資訊卡
   if (e.code === 'Escape' && NET.chatOpen) { e.preventDefault(); closeChat(); return; }
   if (G.ui.dlg) { if (dlgKey(e)) e.preventDefault(); return; }
@@ -4745,7 +4760,7 @@ const NET = {
   ev: [],                                     // 等待送出的特效事件（技能、遠程攻擊、受傷；只走即時連線，附在下一次狀態回報）
   em: -1, en: 0, emT: 0, emCD: 0,             // 自己的表情
   bub: null, bubT: 0,                         // 自己頭上的聊天泡泡
-  card: 0, chatOpen: false, sending: false, winSig: '', hudRect: null,
+  card: 0, cardSig: '', chatOpen: false, sending: false, winSig: '', hudRect: null,
 };
 const netNow = () => Date.now();
 function myName() { return cloudOn() && CLOUD.user ? CLOUD.user : PLAYER_NAME; }
@@ -4754,7 +4769,7 @@ function netWake() { if (!NET.busy && API.ready) netLater(Math.max(30, NET.lastR
 function netClear() { NET.others.clear(); if (NET.card) { NET.card = 0; renderCard(); } }
 function netReset(mode) {
   NET.mode = mode; netClear();
-  rtReset();
+  rtReset(); ptReset();
   Object.assign(NET, { ch: 0, want: 0, online: 0, total: 0, chans: [], me: 0, cursor: 0, joined: false, st: '', fails: 0, log: [], logT: -1e9, sentSig: '', transport: '' });
   NET.seen.clear();
   if (G.ui.win === 'social') renderWin();
@@ -5046,7 +5061,7 @@ function rtOpen(ch, isSwitch) {
   const S = { ws, ch, sw: isSwitch, live: false, mode: NET.mode, err: null, dead: false };
   if (isSwitch) RT.sw = S; else RT.ws = S;
   const timer = setTimeout(() => { if (!S.live) try { ws.close(); } catch (e) {} }, 8000);   // 太久沒有進入頻道
-  ws.onopen = () => { if (G.player) ws.send(JSON.stringify({ t: 'hello', ticket: RT.ticket, s: netState(G.player), ms: mnSigLocal(), bs: mnBossSigLocal() })); };
+  ws.onopen = () => { if (G.player) ws.send(JSON.stringify({ t: 'hello', ticket: RT.ticket, s: netState(G.player), ms: mnSigLocal(), bs: mnBossSigLocal(), pty: 1 })); };
   ws.onmessage = e => rtMessage(S, e.data);
   ws.onclose = e => { clearTimeout(timer); rtClosed(S, e.code); };
 }
@@ -5079,6 +5094,8 @@ function rtMessage(S, data) {
     if (Array.isArray(m.chans)) NET.chans = m.chans.slice(0, NET.nch).map(n0);
     NET.online = n0(m.online); NET.total = n0(m.total);
     netRefreshWin();
+  } else if (m.t === 'pu' || m.t === 'pi' || m.t === 'pe') {
+    if (PT.on) ptMessage(m);   // 組隊（第七階段）
   } else if (m.t === 'r') {
     const q = n0(m.q), P = RT.pend.get(q);
     if (!P) return;
@@ -5105,6 +5122,7 @@ function rtWelcome(S, m) {
   S.boss = S.mobs && n0(m.boss) === MN_BOSS_PROTO && m.bsig === mnBossSigLocal();   // 6-3：Boss 也由伺服器模擬（舊版 Worker 沒有 boss 欄位 → 本機 Boss）
   MN.mobs.clear(); MN.hq = [];   // 換頻道：等新頻道的快照
   if (n0(m.mobs) && !S.mobs) console.warn('[mistwood] 伺服器怪物版本不同，改用本機怪物', m.mobs, m.msig, mnSigLocal());
+  ptWelcome(n0(m.party) === PT_PROTO);   // 組隊：舊版 Worker 沒有 party 欄位 → 隱藏組隊功能
   NET.transport = 'ws'; NET.sentSig = ''; NET.ev = [];   // 斷線期間的特效事件已經過時
   if (n0(m.ch) !== NET.ch) NET.seen.clear();   // 各頻道的聊天編號各自遞增：換頻道時重新記錄
   netApply({ ch: m.ch, nch: m.nch, cap: m.cap, online: m.online, total: m.total, chans: m.chans, me: m.me, now: m.now,
@@ -5127,7 +5145,7 @@ function rtClosed(S, code) {
   for (const P of RT.pend.values()) { clearTimeout(P.timer); P.reject({ offline: true, msg: '連線中斷，訊息可能沒有送出' }); }
   RT.pend.clear();
   if (S.live) {   // 原本正常，突然斷線
-    netClear(); NET.transport = '';
+    netClear(); NET.transport = ''; ptClosed();
     if (code === 4001 || kind === 'replaced') {   // 同一個帳號在其他地方連上了頻道：這裡暫停（不再自動重連，避免兩邊互踢）
       playPause('device'); return;
     } else {
@@ -5152,6 +5170,186 @@ function rtRequest(obj, ms = 6000) {
     RT.pend.set(q, { resolve, reject, timer });
     rtSend({ ...obj, q });
   });
+}
+
+// ---- 組隊（第七階段） ----
+// 只有 Worker 的 welcome 帶 party = PT_PROTO、而且目前走即時連線時才啟用；舊版 Worker、HTTP 備援、訪客 → 組隊功能完全隱藏。
+// 規則（docs/PHASE7.md）：最多 4 人、任何隊員都能邀請、邀請不逾時、離線不退隊、隊長可踢人／轉移隊長、剩 1 人自動解散。
+// 伺服器 → 前端：{t:'pu', p:{id, v, lead, mem:[{id, name, lv, job, ch, z, on}]} 或 null}  隊伍快照
+//               {t:'pi', from, name, lv, job, ch}  收到邀請（新邀請取代舊的）
+//               {t:'pe', k, id, name, why?}        事件 join／leave／kick／lead／decline／void（邀請作廢）／disband／stale
+// 前端 → 伺服器：{t:'p', q, op:'inv'|'ans'|'leave'|'kick'|'lead', id?, ok?}（回覆 {t:'r', q, ok, error?}）
+const PT_PROTO = 1, PT_MAX = 4;
+const PT = { on: false, p: null, inv: null, stale: false, busy: false, cfKick: 0 };
+const ZONE_NAMES = ['晨霧森林', '霜月雪原'];
+const ptLive = () => PT.on && rtLive();
+const ptShown = () => ptLive() || !!PT.p;             // 隊伍視窗（P）／選單項目要不要出現
+const ptIsLead = () => !!PT.p && PT.p.lead === NET.me;
+const ptMate = id => !!PT.p && PT.p.mem.some(m => m.id === id);
+function ptReset() { Object.assign(PT, { on: false, p: null, inv: null, stale: false, cfKick: 0 }); ptRefresh(); }
+// 進入頻道（含換頻道、重連）：伺服器支援才啟用；隊伍快照由伺服器接著送來（先保留舊的，換頻道時不會閃一下）
+function ptWelcome(on) {
+  const was = PT.on;
+  PT.on = on; PT.stale = false; PT.inv = null;
+  if (!on) PT.p = null;
+  if (on !== was || G.ui.win === 'party' || G.ui.win === 'menu') ptRefresh(); else renderInvite();
+}
+function ptClosed() { PT.inv = null; PT.cfKick = 0; ptRefresh(); }
+function ptRefresh() {
+  renderInvite();
+  if (G.ui.win === 'party' || G.ui.win === 'menu') renderWin();
+  if (NET.card) renderCard();
+}
+function ptSnap(p) {
+  if (!p || typeof p !== 'object' || !Array.isArray(p.mem)) return null;
+  const mem = p.mem.slice(0, PT_MAX).map(m => ({
+    id: n0(m && m.id), name: netText(m && m.name, 12) || '？', lv: clamp(n0(m && m.lv) || 1, 1, 200),
+    job: m && JOBS[m.job] ? m.job : 'novice', ch: n0(m && m.ch), z: m && m.z === 1 ? 1 : 0, on: !!(m && m.on),
+  })).filter(m => m.id);
+  return { id: netText(p.id, 24), v: n0(p.v), lead: n0(p.lead), mem };
+}
+function ptMessage(m) {
+  if (m.t === 'pu') {
+    PT.p = ptSnap(m.p);
+    if (!PT.p || !ptMate(PT.cfKick)) PT.cfKick = 0;
+    ptRefresh();
+  } else if (m.t === 'pi') {
+    const from = n0(m.from);
+    if (!from || from === NET.me) return;
+    PT.inv = { from, name: netText(m.name, 12) || '？', lv: clamp(n0(m.lv) || 1, 1, 200), job: JOBS[m.job] ? m.job : 'novice', ch: n0(m.ch) };
+    chatSys(`${PT.inv.name} 邀請你加入隊伍${isTouch ? '' : '（按 Y 接受、N 拒絕）'}`);
+    SFX.chat(); ptRefresh();
+  } else if (m.t === 'pe') ptEvent(m);
+}
+function ptEvent(m) {
+  const id = n0(m.id), nm = netText(m.name, 12) || '？', me = id === NET.me;
+  let t = '', col = '#9ff0c8', quiet = false;
+  switch (m.k) {
+    case 'join': t = `${nm} 加入了隊伍`; SFX.coin(); break;
+    case 'leave': t = `${nm} 離開了隊伍`; col = '#d8cfb4'; break;
+    case 'kick': t = me ? '你被隊長踢出了隊伍' : `${nm} 被踢出隊伍`; col = me ? '#ffb3a8' : '#d8cfb4'; break;
+    case 'lead': t = me ? '你成為了隊長' : `${nm} 成為隊長`; break;
+    case 'decline': t = `${nm} 拒絕了你的組隊邀請`; col = '#ffb3a8'; break;
+    case 'disband': t = '隊伍已解散'; col = '#d8cfb4'; break;
+    case 'stale': PT.stale = true; PT.inv = null; t = '隊伍功能在另一處使用中（這個角色在其他地方連線）'; col = '#ffb3a8'; break;
+    case 'void': {
+      const mine = !!PT.inv && PT.inv.from === id;   // 別人給我的邀請作廢（否則是我發出的邀請作廢）
+      if (mine) PT.inv = null;
+      const why = mine ? { full: '隊伍已滿', left: '對方已離開隊伍', party: '你已加入其他隊伍' }[m.why]
+        : { full: '隊伍已滿', left: '你已離開隊伍', off: '對方已離線', party: '對方已加入其他隊伍', replaced: '對方收到了其他邀請' }[m.why];
+      t = mine ? `${nm} 的組隊邀請已失效` : `給 ${nm} 的組隊邀請已失效`;
+      if (why) t += `（${why}）`;
+      col = '#d8cfb4'; quiet = !mine && (m.why === 'left' || m.why === 'full');   // 自己離隊／隊伍滿了：只記在聊天紀錄
+      break;
+    }
+    default: return;
+  }
+  chatSys(t);
+  if (!quiet) toast(t, col);
+  ptRefresh();
+}
+// 送出隊伍指令（失敗時顯示伺服器的原因）；回傳 true = 成功
+async function ptCmd(op, id, extra) {
+  if (!ptLive()) { toast('組隊功能目前無法使用', '#ffb3a8'); SFX.deny(); return false; }
+  if (PT.stale) { toast('隊伍功能在另一處使用中', '#ffb3a8'); SFX.deny(); return false; }
+  if (PT.busy) return false;
+  PT.busy = true;
+  try { await rtRequest(Object.assign({ t: 'p', op }, id ? { id } : {}, extra || {})); return true; }
+  catch (e) { toast((e && e.msg) || '操作失敗', '#ffb3a8'); SFX.deny(); return false; }
+  finally { PT.busy = false; ptRefresh(); }
+}
+async function ptInvite(id) {
+  const R = NET.others.get(id), nm = R ? R.name : '對方';
+  if (await ptCmd('inv', id)) { toast(`已邀請 ${nm} 加入隊伍，等待回覆`, '#9ff0c8'); chatSys(`已邀請 ${nm} 加入隊伍`); SFX.click(); }
+}
+async function ptAnswer(ok) {
+  const I = PT.inv;
+  if (!I) return;
+  PT.inv = null; renderInvite();
+  if (await ptCmd('ans', I.from, { ok: ok ? 1 : 0 })) { if (!ok) chatSys(`已拒絕 ${I.name} 的組隊邀請`); SFX.click(); }
+}
+// 邀請提示（畫面上方中間；鍵盤 Y／N）
+function renderInvite() {
+  const el = $('pinv');
+  if (!el) return;
+  const I = ptLive() && !PT.stale ? PT.inv : null;
+  el.textContent = '';
+  if (!I) { el.classList.remove('show'); return; }
+  const mk = (tag, cls, text, parent) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; (parent || el).appendChild(n); return n; };
+  const t = mk('div');
+  mk('span', 'nm', I.name, t);
+  t.appendChild(document.createTextNode(' 邀請你加入隊伍'));
+  mk('div', 'sub', `Lv.${I.lv}・${JOBS[I.job].name}${I.ch ? `・頻道 ${I.ch}` : ''}`);
+  const a = mk('div', 'acts2');
+  const btn = (label, cls, ok) => {
+    const b = mk('button', 'sb' + cls, label, a);
+    b.addEventListener('click', ev => { ev.stopPropagation(); initAudio(); b.blur(); ptAnswer(ok); });
+  };
+  btn(isTouch ? '接受' : '接受（Y）', '', true);
+  btn(isTouch ? '拒絕' : '拒絕（N）', ' alt', false);
+  el.classList.add('show');
+}
+// 資訊卡上組隊按鈕的狀態（有變才重畫資訊卡）
+const ptCardSig = R => [ptLive(), PT.stale, ptMate(R.id), PT.p ? PT.p.lead + ':' + PT.p.mem.length : '', PT.cfKick, PT.busy].join();
+// 玩家資訊卡上的組隊按鈕（renderCard 呼叫）
+function ptCardActs(R, mk, el) {
+  if (!ptLive() || PT.stale) return;
+  const a = mk('div', 'acts2', null, el);
+  const btn = (label, cls, fn, dis, title) => {
+    const b = mk('button', 'sb' + (cls ? ' ' + cls : ''), label, a);
+    if (dis) b.disabled = true;
+    if (title) b.title = title;
+    b.addEventListener('click', ev => { ev.stopPropagation(); initAudio(); b.blur(); fn(); });
+  };
+  if (ptMate(R.id)) {
+    mk('span', 'tg', R.id === PT.p.lead ? '隊友・隊長' : '隊友', a);
+    if (!ptIsLead()) return;
+    const cf = PT.cfKick === R.id;
+    btn(cf ? '確定踢出？' : '踢出隊伍', cf ? 'red' : 'alt', () => { if (PT.cfKick === R.id) { PT.cfKick = 0; ptCmd('kick', R.id); } else { PT.cfKick = R.id; SFX.click(); renderCard(); } });
+    btn('轉為隊長', 'alt', () => { PT.cfKick = 0; ptCmd('lead', R.id); });
+    return;
+  }
+  const full = !!PT.p && PT.p.mem.length >= PT_MAX;
+  btn('邀請組隊', '', () => ptInvite(R.id), full || PT.busy, full ? '隊伍已滿（最多 4 人）' : '');
+  if (full) mk('span', 'dim', '隊伍已滿', a);
+}
+// 隊伍視窗（P）：成員清單用 DOM API ＋ textContent 填入（玩家名稱不經過 innerHTML）
+function fillParty() {
+  const box = $('ptBox');
+  if (!box) return;
+  const mk = (tag, cls, text, parent) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; parent.appendChild(n); return n; };
+  const live = ptLive() && !PT.stale, I = live ? PT.inv : null;
+  if (I) {
+    mk('div', 'hd', '收到的邀請', box);
+    const row = mk('div', 'row', null, box), g = mk('div', 'grow', null, row);
+    mk('div', 't', I.name, g);
+    mk('div', 'd dim', `Lv.${I.lv}・${JOBS[I.job].name}${I.ch ? `・頻道 ${I.ch}` : ''} 邀請你加入隊伍`, g);
+    const y = mk('button', 'sb', '接受', row); y.dataset.do = 'ptAns'; y.dataset.b = '1';
+    const n = mk('button', 'sb alt', '拒絕', row); n.dataset.do = 'ptAns'; n.dataset.b = '0';
+  }
+  const P = PT.p;
+  if (!P) {
+    mk('div', 'det dim', '目前沒有隊伍。點擊畫面中的其他玩家（或社群視窗 C 的玩家名稱）→「邀請組隊」，對方接受後就會組成隊伍；任何隊員都能邀請，最多 4 人。', box);
+    return;
+  }
+  mk('div', 'hd', `隊伍（${P.mem.length} / ${PT_MAX} 人）`, box);
+  const lead = ptIsLead();
+  for (const m of P.mem) {
+    const row = mk('div', 'row' + (m.id === NET.me ? ' me' : '') + (m.on ? '' : ' off'), null, box), g = mk('div', 'grow', null, row);
+    const t = mk('div', 't', m.name, g);
+    if (m.id === P.lead) mk('span', 'tg lead', '隊長', t);
+    if (m.id === NET.me) mk('span', 'tg', '你', t);
+    mk('div', 'd dim', `Lv.${m.lv}・${JOBS[m.job].name}・` + (m.on ? `頻道 ${m.ch}・${ZONE_NAMES[m.z]}` : '離線'), g);
+    if (!live || !lead || m.id === NET.me) continue;
+    const cf = G.ui.confirm === 'ptKick' + m.id;
+    const k = mk('button', 'sb ' + (cf ? 'red' : 'alt'), cf ? '確定踢出？' : '踢出', row); k.dataset.do = 'ptKick'; k.dataset.a = String(m.id);
+    const l = mk('button', 'sb alt', '轉為隊長', row); l.dataset.do = 'ptLead'; l.dataset.a = String(m.id);
+    if (!m.on) { l.disabled = true; l.title = '對方不在線上'; }
+  }
+  if (!live) return;
+  const a = mk('div', 'acts2', null, box), cf = G.ui.confirm === 'ptLeave';
+  const b = mk('button', 'sb ' + (cf ? 'red' : 'alt'), cf ? '確定退出隊伍？' : '退出隊伍', a); b.dataset.do = 'ptLeave';
+  mk('div', 'd dim', lead ? '你是隊長：可以踢出隊員（離線的也可以）或把隊長轉給在線的隊員。' : '只有隊長可以踢人與轉移隊長；離線不會自動退隊。', box);
 }
 
 // ---- 即時連線：伺服器權威的一般怪物（第六階段 6-2）與 Boss（6-3） ----
@@ -5458,8 +5656,12 @@ function netHudTap(e) {
 }
 function renderCard() {
   const el = $('pcard'), R = NET.card ? NET.others.get(NET.card) : null;
+  if (!R || !SETTINGS.others) { NET.card = 0; PT.cfKick = 0; NET.cardSig = ''; el.textContent = ''; el.classList.remove('show'); return; }
+  // 內容沒變就不重畫（位置廣播每秒約 10 次，一直重畫會讓按鈕點不到）
+  const sig = [R.id, R.name, R.lv, R.job, NET.ch, JSON.stringify(R.equip), ptCardSig(R)].join('|');
+  if (sig === NET.cardSig && el.classList.contains('show')) return;
+  NET.cardSig = sig;
   el.textContent = '';
-  if (!R || !SETTINGS.others) { NET.card = 0; el.classList.remove('show'); return; }
   const mk = (tag, cls, text, parent) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; (parent || el).appendChild(n); return n; };
   const head = mk('div', 'ph');
   mk('div', 'nm', R.name, head);
@@ -5473,6 +5675,7 @@ function renderCard() {
     const nm = mk('span', null, ITEMS[it.b].name, v); nm.style.color = R0.color; nm.style.fontWeight = '800';
     mk('span', 'tg', R0.name, v);
   }
+  ptCardActs(R, mk, el);
   el.classList.add('show');
 }
 
@@ -5772,7 +5975,8 @@ const KEY_HELP = [
   ['← →', '移動'], ['↑ ↓', '攀爬繩索／趴下'], ['Alt / 空白鍵', '跳躍（↓ + 跳躍：從平台跳下）'], ['Ctrl / Z', '普通攻擊'],
   ['X / A / S / D', '技能快捷鍵'], ['1 / 2', '紅色／藍色藥水（按住連續使用）'], ['Shift + Enter', '商店一次買 10 瓶藥水（也可用 ↓ 選到 ×10 再按 Enter）'], ['↑ / Enter', '和 NPC 對話'],
   ['K / I / E / Q', '技能／背包／裝備／任務'], ['L / R', '帳號／排行榜'], ['O / Esc', '設定（沒有開視窗時按 Esc）'],
-  ['T', '聊天（Enter 送出・Esc 取消；需登入）'], ['3～8', '表情（開心／愛心／哭哭／生氣／驚訝／音符）'], ['C', '社群（頻道、同頻道玩家、聊天紀錄）'], ['滑鼠點擊其他玩家', '查看角色資訊'],
+  ['T', '聊天（Enter 送出・Esc 取消；需登入）'], ['3～8', '表情（開心／愛心／哭哭／生氣／驚訝／音符）'], ['C', '社群（頻道、同頻道玩家、聊天紀錄）'], ['滑鼠點擊其他玩家', '查看角色資訊、邀請組隊'],
+  ['P', '隊伍（伺服器支援組隊時）'], ['Y / N', '接受／拒絕組隊邀請'],
 ];
 
 // ================= 視窗（技能 / 背包 / 裝備 / 任務 / 商店 / 帳號 / 排行榜 / 設定 / 選單） =================
@@ -6057,8 +6261,15 @@ const WIN = {
       <div class="acts2"><button class="sb" data-do="chatOpen">${cloudOn() ? '聊天' : '聊天（需登入）'}<span class="keyOnly">（T）</span></button></div>`;
     return [h, '<span>點擊玩家名稱或畫面中的玩家可查看角色資訊</span>'];
   },
+  party() {   // 隊伍（第七階段；成員名稱由 fillParty 用 textContent 填入）
+    let h = '';
+    if (!ptLive()) h += '<div class="det dim">組隊功能暫時無法使用（多人連線重新連線中）。以下是最後的隊伍狀態。</div>';
+    else if (PT.stale) h += '<div class="det dim">這個角色已在其他分頁或裝置連線，隊伍功能在那裡使用中。</div>';
+    h += '<div id="ptBox"></div>';
+    return [h, '<span class="keyOnly">P 開關隊伍視窗・</span><span>任何隊員都能邀請，最多 4 人；離線不會退隊</span>'];
+  },
   menu() {   // 觸控裝置的選單：開啟所有視窗
-    const items = [['skill', '技能'], ['bag', '背包'], ['equip', '裝備'], ['quest', '任務'], ['account', '帳號'], ['rank', '排行榜'], ['social', '社群'], ['settings', '設定'], ['help', '說明']];
+    const items = [['skill', '技能'], ['bag', '背包'], ['equip', '裝備'], ['quest', '任務'], ['account', '帳號'], ['rank', '排行榜'], ['social', '社群'], ...(ptShown() ? [['party', '隊伍']] : []), ['settings', '設定'], ['help', '說明']];
     const dot = { skill: !!hudCache.mbSkilldot, quest: !!hudCache.mbQuestdot, account: !!CLOUD.pending };
     return ['<div class="mgrid">' + items.map(([id, nm]) => `<button class="mitem ${dot[id] ? 'dot' : ''}" data-do="${id === 'help' ? 'help' : 'tab'}" data-a="${id}">${nm}</button>`).join('') + '</div>', ''];
   },
@@ -6102,13 +6313,14 @@ function renderWin(resetScroll) {
   let head = '<div class="wh">';
   if (w === 'account' || w === 'rank') head += CLOUD_TABS.map(([id, nm, k]) => `<button class="tab ${w === id ? 'on' : ''}" data-do="tab" data-a="${id}">${nm}<small>${k}</small></button>`).join('');
   else if (w === 'shop') head += '<span class="wt">葛蘭的商店</span>' + [['buy', '購買'], ['sell', '賣出']].map(([t, nm]) => `<button class="tab ${G.ui.shopTab === t ? 'on' : ''}" data-do="stab" data-a="${t}">${nm}</button>`).join('');
-  else if (w === 'settings' || w === 'menu' || w === 'social') head += `<span class="wt">${{ menu: '選單', settings: '設定', social: '社群' }[w]}</span>` + (isTouch && w !== 'menu' ? '<button class="tab" data-do="tab" data-a="menu">◀ 選單</button>' : '');
+  else if (w === 'settings' || w === 'menu' || w === 'social' || w === 'party') head += `<span class="wt">${{ menu: '選單', settings: '設定', social: '社群', party: '隊伍' }[w]}</span>` + (isTouch && w !== 'menu' ? '<button class="tab" data-do="tab" data-a="menu">◀ 選單</button>' : '');
   else head += WIN_TABS.map(([id, nm, k]) => `<button class="tab ${w === id ? 'on' : ''}" data-do="tab" data-a="${id}">${nm}<small>${k}</small></button>`).join('');
   head += '<button class="xbtn" data-do="close" aria-label="關閉視窗">✕</button></div>';
   const [body, foot] = WIN[w]();
   el.innerHTML = head + `<div class="wb" id="wb">${body}</div>` + (foot ? `<div class="wf">${foot}</div>` : '');
   el.classList.add('show');
   if (w === 'social') { fillSocial(); NET.winSig = netWinSig(); }
+  if (w === 'party') fillParty();
   $('wb').scrollTop = top;
   if ($('acPass')) $('acPass').value = CLOUD.form.pass;   // 密碼不寫進 HTML，重繪後用程式填回
   if (focusId && $(focusId) && !$(focusId).disabled) $(focusId).focus({ preventScroll: true });
@@ -6118,7 +6330,7 @@ function renderWin(resetScroll) {
 function uiAction(act, a, b) {
   const p = G.player;
   if (!p || !G.ui.win) return;
-  if (act !== 'drop' && act !== 'sell' && act !== 'useLocal' && act !== 'useCloud') G.ui.confirm = null;
+  if (act !== 'drop' && act !== 'sell' && act !== 'useLocal' && act !== 'useCloud' && act !== 'ptLeave' && act !== 'ptKick') G.ui.confirm = null;
   switch (act) {
     case 'close': closeWin(); return;
     case 'tab': G.ui.win = a; SFX.click(); renderWin(true); return;
@@ -6157,6 +6369,10 @@ function uiAction(act, a, b) {
     case 'card': NET.card = +a; SFX.click(); renderCard(); return;
     case 'setOthers': SETTINGS.others = !SETTINGS.others; saveSettings(); if (!SETTINGS.others) { NET.card = 0; renderCard(); } SFX.click(); break;
     case 'setBubbles': SETTINGS.bubbles = !SETTINGS.bubbles; saveSettings(); SFX.click(); break;
+    case 'ptAns': ptAnswer(b === '1'); return;
+    case 'ptLeave': if (G.ui.confirm === 'ptLeave') { G.ui.confirm = null; ptCmd('leave'); } else { G.ui.confirm = 'ptLeave'; SFX.click(); } break;
+    case 'ptKick': if (G.ui.confirm === 'ptKick' + a) { G.ui.confirm = null; ptCmd('kick', +a); } else { G.ui.confirm = 'ptKick' + a; SFX.click(); } break;
+    case 'ptLead': ptCmd('lead', +a); break;
   }
   renderWin();
 }
@@ -6165,6 +6381,7 @@ function winKey(e) {
   if (c === 'Escape') { closeWin(); return true; }
   if (c === 'KeyT' && !e.ctrlKey && !e.metaKey && !e.altKey) { if (!e.repeat) openChat(); return true; }
   if (EMOTE_KEYS[c] !== undefined) { if (!e.repeat) doEmote(EMOTE_KEYS[c]); return true; }
+  if (c === 'KeyP' && ptShown()) { if (!e.repeat) openWin('party'); return true; }
   if (MENU_KEYS[c]) {
     if (!e.repeat) { if (w === MENU_KEYS[c]) closeWin(); else { G.ui.win = MENU_KEYS[c]; G.ui.confirm = null; SFX.click(); renderWin(true); } }
     return true;
